@@ -198,6 +198,7 @@ function handleDemoFallback(path, data, method) {
       development_code: '123456',
       message: 'Demo mode active. Use code: 123456',
       is_new_user: isNewUser,
+      user_name: existing ? existing.name : undefined,
     };
   }
 
@@ -221,6 +222,7 @@ function handleDemoFallback(path, data, method) {
       development_code: '123456',
       message: 'Demo mode active. Use code: 123456',
       is_new_user: isNewUser,
+      user_name: existing ? existing.name : undefined,
     };
   }
 

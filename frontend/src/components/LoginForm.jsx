@@ -4,6 +4,36 @@ import { FormField } from './Common';
 import { api } from '../api';
 import { translate } from '../locales';
 
+function getCachedUserName(contact) {
+  if (!contact) return '';
+  try {
+    const raw = localStorage.getItem('ys_user_names');
+    if (raw) {
+      const map = JSON.parse(raw);
+      if (map[contact]) return map[contact];
+    }
+  } catch {}
+  try {
+    const rawDb = localStorage.getItem('ys_demo_users_db');
+    if (rawDb) {
+      const db = JSON.parse(rawDb);
+      if (db[contact]?.name) return db[contact].name;
+    }
+  } catch {}
+  if (contact === '+919000000002') return 'Harpreet Singh (Owner)';
+  return '';
+}
+
+function saveCachedUserName(contact, name) {
+  if (!contact || !name) return;
+  try {
+    const raw = localStorage.getItem('ys_user_names');
+    const map = raw ? JSON.parse(raw) : {};
+    map[contact] = name;
+    localStorage.setItem('ys_user_names', JSON.stringify(map));
+  } catch {}
+}
+
 export function LoginForm({ busy, run, onUser, lang = 'en', setLang }) {
   const [config, setConfig] = useState({ phone: true, email: 'development' });
   const [mode, setMode] = useState('phone'); // User can toggle between Phone and Email
@@ -194,7 +224,8 @@ export function LoginForm({ busy, run, onUser, lang = 'en', setLang }) {
                   setDestination(fullPhone);
                   run(async () => {
                     const res = await api('/auth/request', { phone: fullPhone });
-                    setChallenge(res);
+                    const knownName = res?.user_name || getCachedUserName(fullPhone) || '';
+                    setChallenge({ ...res, user_name: knownName });
                   });
                 }}
               >
@@ -254,7 +285,10 @@ export function LoginForm({ busy, run, onUser, lang = 'en', setLang }) {
                   <UserCheck size={16} />
                 </div>
                 <span style={{ fontSize: '13px', fontWeight: 600, color: '#166534' }}>
-                  {t('welcomeBack')}{challenge.user_name ? `, ${challenge.user_name}` : '!'}
+                  {(() => {
+                    const userName = challenge.user_name || getCachedUserName(destination);
+                    return userName ? t('welcomeBack', { name: userName }) : `${t('welcomeBackTitle')}!`;
+                  })()}
                 </span>
               </div>
               <h2>{t('enterOtpTitle')}</h2>
@@ -266,15 +300,15 @@ export function LoginForm({ busy, run, onUser, lang = 'en', setLang }) {
                 onSubmit={(e) => {
                   e.preventDefault();
                   const f = new FormData(e.target);
-                  run(async () =>
-                    onUser(
-                      await api('/auth/verify', {
-                        challenge_id: challenge.challenge_id,
-                        code: f.get('code'),
-                        phone: destination,
-                      })
-                    )
-                  );
+                  run(async () => {
+                    const u = await api('/auth/verify', {
+                      challenge_id: challenge.challenge_id,
+                      code: f.get('code'),
+                      phone: destination,
+                    });
+                    if (u?.name) saveCachedUserName(destination, u.name);
+                    onUser(u);
+                  });
                 }}
               >
                 {challenge.development_code && (
@@ -330,18 +364,18 @@ export function LoginForm({ busy, run, onUser, lang = 'en', setLang }) {
                 onSubmit={(e) => {
                   e.preventDefault();
                   const f = new FormData(e.target);
-                  run(async () =>
-                    onUser(
-                      await api('/auth/verify', {
-                        challenge_id: challenge.challenge_id,
-                        code: f.get('code'),
-                        name: f.get('name'),
-                        roles: f.getAll('roles'),
-                        language: lang,
-                        phone: destination,
-                      })
-                    )
-                  );
+                  run(async () => {
+                    const u = await api('/auth/verify', {
+                      challenge_id: challenge.challenge_id,
+                      code: f.get('code'),
+                      name: f.get('name'),
+                      roles: f.getAll('roles'),
+                      language: lang,
+                      phone: destination,
+                    });
+                    if (u?.name) saveCachedUserName(destination, u.name);
+                    onUser(u);
+                  });
                 }}
               >
                 {challenge.development_code && (
@@ -487,8 +521,9 @@ export function LoginForm({ busy, run, onUser, lang = 'en', setLang }) {
                   const val = new FormData(e.target).get('destination').trim();
                   run(async () => {
                     const result = await api('/auth/email/request', { email: val });
+                    const knownName = result?.user_name || getCachedUserName(val) || '';
                     setDestination(val);
-                    setChallenge(result);
+                    setChallenge({ ...result, user_name: knownName });
                   });
                 }}
               >
@@ -522,17 +557,17 @@ export function LoginForm({ busy, run, onUser, lang = 'en', setLang }) {
               onSubmit={(e) => {
                 e.preventDefault();
                 const f = new FormData(e.target);
-                run(async () =>
-                  onUser(
-                    await api('/auth/email/verify', {
-                      challenge_id: challenge.challenge_id,
-                      code: f.get('code'),
-                      ...(f.get('name') ? { name: f.get('name'), roles: f.getAll('roles') } : {}),
-                      language: lang,
-                      email: destination,
-                    })
-                  )
-                );
+                run(async () => {
+                  const u = await api('/auth/email/verify', {
+                    challenge_id: challenge.challenge_id,
+                    code: f.get('code'),
+                    ...(f.get('name') ? { name: f.get('name'), roles: f.getAll('roles') } : {}),
+                    language: lang,
+                    email: destination,
+                  });
+                  if (u?.name) saveCachedUserName(destination, u.name);
+                  onUser(u);
+                });
               }}
             >
               {challenge.development_code ? (
