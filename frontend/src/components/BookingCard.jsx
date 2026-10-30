@@ -4,9 +4,10 @@ import { api } from '../api';
 import { INR, dt, translate } from '../locales';
 
 export function BookingCard({ booking: b, user: u, busy, run, load, setModal, notify, lang = 'en' }) {
+  if (!b) return null;
   const t = (k, p) => translate(lang, k, p);
-  const owner = u.id === b.owner_id;
-  const farmer = u.id === b.farmer_id;
+  const owner = Boolean(u && b && u.id === b.owner_id);
+  const farmer = Boolean(u && b && u.id === b.farmer_id);
 
   const action = (a) =>
     run(async () => {
@@ -14,20 +15,23 @@ export function BookingCard({ booking: b, user: u, busy, run, load, setModal, no
       await load();
     });
 
-  const statusLabel = t(b.status) || b.status.replaceAll('_', ' ');
-  const paymentLabel = t(b.payment_status) || b.payment_status.replaceAll('_', ' ');
-  const selectedAttachments = Array.isArray(b.selected_attachments) ? b.selected_attachments : [];
+  const statusRaw = String(b?.status || 'PENDING');
+  const statusLabel = t(statusRaw) || statusRaw.replaceAll('_', ' ');
+  const paymentRaw = String(b?.payment_status || 'UNPAID');
+  const paymentLabel = t(paymentRaw) || paymentRaw.replaceAll('_', ' ');
+  const selectedAttachments = Array.isArray(b?.selected_attachments) ? b.selected_attachments : [];
+  const bookingCode = String(b?.id || '').slice(0, 8).toUpperCase() || 'BOOKING';
 
   return (
     <article className="booking-card">
       <div className="booking-heading">
         <div>
           <small>
-            {b.id.slice(0, 8).toUpperCase()} · {b.village}
+            {bookingCode} · {b?.village || 'Punjab'}
           </small>
-          <h3>{b.machine_name}</h3>
+          <h3>{b?.machine_name || 'Farm Equipment'}</h3>
         </div>
-        <span className={'status ' + b.status.toLowerCase()}>{statusLabel}</span>
+        <span className={'status ' + statusRaw.toLowerCase()}>{statusLabel}</span>
       </div>
 
       <div className="booking-meta">
@@ -240,7 +244,7 @@ export function BookingCard({ booking: b, user: u, busy, run, load, setModal, no
               <>
                 <select
                   aria-label="Manually reported payment status"
-                  value={b.payment_status}
+                  value={b?.payment_status || 'UNPAID'}
                   disabled={busy}
                   onChange={(e) => {
                     const status = e.target.value;

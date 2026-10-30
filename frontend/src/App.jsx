@@ -208,16 +208,23 @@ function Workspace({ initialUser, onLogout, sharedLang, setSharedLang }) {
   }
 
   async function load() {
-    const [b, f, o, n] = await Promise.all([
-      api('/bookings'),
-      api('/fleet'),
-      api('/organizations'),
-      api('/notifications'),
-    ]);
-    setRows(b);
-    setFleet(f);
-    setOrgs(o);
-    setNotifications(n);
+    try {
+      const [b, f, o, n] = await Promise.all([
+        api('/bookings').catch(() => []),
+        api('/fleet').catch(() => []),
+        api('/organizations').catch(() => []),
+        api('/notifications').catch(() => []),
+      ]);
+      setRows(Array.isArray(b) ? b : []);
+      setFleet(Array.isArray(f) ? f : []);
+      setOrgs(Array.isArray(o) ? o : []);
+      setNotifications(Array.isArray(n) ? n : []);
+    } catch {
+      setRows([]);
+      setFleet([]);
+      setOrgs([]);
+      setNotifications([]);
+    }
   }
 
   function saveDrafts(next) {
@@ -254,7 +261,7 @@ function Workspace({ initialUser, onLogout, sharedLang, setSharedLang }) {
     setModal({ type: 'book', machine: m });
   }
 
-  const completed = rows.filter((b) => b.status === 'COMPLETED');
+  const completed = (Array.isArray(rows) ? rows : []).filter((b) => b && b.status === 'COMPLETED');
 
   return (
     <div className={`app ${sidebarOpen ? 'sidebar-open' : 'sidebar-collapsed'}`}>
@@ -699,8 +706,8 @@ function Workspace({ initialUser, onLogout, sharedLang, setSharedLang }) {
                         <Stat
                           label={t('activeBookings')}
                           value={
-                            rows.filter((b) =>
-                              ['PENDING', 'APPROVED', 'IN_PROGRESS'].includes(b.status)
+                            (Array.isArray(rows) ? rows : []).filter((b) =>
+                              b && ['PENDING', 'APPROVED', 'IN_PROGRESS'].includes(b.status)
                             ).length
                           }
                         />
@@ -708,16 +715,16 @@ function Workspace({ initialUser, onLogout, sharedLang, setSharedLang }) {
                           label={t('ownerEarnings')}
                           value={INR(
                             completed
-                              .filter((b) => b.owner_id === u.id)
-                              .reduce((s, b) => s + Number(b.final_total), 0)
+                              .filter((b) => b && b.owner_id === u?.id)
+                              .reduce((s, b) => s + Number(b.final_total || 0), 0)
                           )}
                         />
                         <Stat
                           label={t('farmerExpenditures')}
                           value={INR(
                             completed
-                              .filter((b) => b.farmer_id === u.id)
-                              .reduce((s, b) => s + Number(b.final_total), 0)
+                              .filter((b) => b && b.farmer_id === u?.id)
+                              .reduce((s, b) => s + Number(b.final_total || 0), 0)
                           )}
                         />
                       </div>
@@ -762,9 +769,9 @@ function Workspace({ initialUser, onLogout, sharedLang, setSharedLang }) {
                         </section>
                       )}
 
-                      {rows.map((b) => (
+                      {(Array.isArray(rows) ? rows : []).map((b) => (
                         <BookingCard
-                          key={b.id}
+                          key={b?.id || Math.random()}
                           booking={b}
                           user={u}
                           busy={busy}

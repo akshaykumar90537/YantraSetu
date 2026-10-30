@@ -7,14 +7,23 @@ import { MapPicker } from './MapPicker';
 import { MapPin, Wrench, Fuel, CheckCircle2 } from 'lucide-react';
 
 export function BookingForm({ machine: m, online, busy, run, onDone, lang = 'en' }) {
+  if (!m) return null;
+
   const [quote, setQuote] = useState(null);
-  const [idempotencyKey] = useState(crypto.randomUUID());
+  const [idempotencyKey] = useState(() => {
+    try {
+      if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+        return crypto.randomUUID();
+      }
+    } catch {}
+    return '10000000-0000-4000-8000-' + Math.random().toString(16).slice(2, 14);
+  });
   const [availability, setAvailability] = useState(null);
   const [startVal, setStartVal] = useState('');
   const [endVal, setEndVal] = useState('');
-  const [acresVal, setAcresVal] = useState(m.unit === 'acre' ? '1.0' : '');
-  const [farmLat, setFarmLat] = useState(String(m.latitude || 30.901));
-  const [farmLon, setFarmLon] = useState(String(m.longitude || 75.857));
+  const [acresVal, setAcresVal] = useState(m?.unit === 'acre' ? '1.0' : '');
+  const [farmLat, setFarmLat] = useState(String(m?.latitude || 30.901));
+  const [farmLon, setFarmLon] = useState(String(m?.longitude || 75.857));
   const [showFarmMap, setShowFarmMap] = useState(false);
 
   // Attachments & Fuel options
@@ -22,8 +31,8 @@ export function BookingForm({ machine: m, online, busy, run, onDone, lang = 'en'
   const [fuelIncluded, setFuelIncluded] = useState(false);
 
   const t = (k, p) => translate(lang, k, p);
-  const offeredAttachments = Array.isArray(m.attachments) ? m.attachments : [];
-  const hasFuelOption = Boolean(m.fuel_included && Number(m.fuel_rate_extra) > 0);
+  const offeredAttachments = Array.isArray(m?.attachments) ? m.attachments : [];
+  const hasFuelOption = Boolean(m?.fuel_included && Number(m?.fuel_rate_extra) > 0);
 
   const now = new Date();
   const pad = (n) => String(n).padStart(2, '0');

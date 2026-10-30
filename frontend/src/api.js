@@ -619,11 +619,15 @@ function handleDemoFallback(path, data, method) {
       return newBooking;
     }
 
-    // Return bookings enriched with live ratings
-    return bookings.map((b) => {
-      const farmerStats = calculateRatingStats(b.farmer_id, ratings);
-      const ownerStats = calculateRatingStats(b.owner_id, ratings);
+    // Return bookings enriched with live ratings and guaranteed defaults
+    return (Array.isArray(bookings) ? bookings : []).map((b) => {
+      const farmerStats = calculateRatingStats(b?.farmer_id, ratings);
+      const ownerStats = calculateRatingStats(b?.owner_id, ratings);
       return {
+        payment_status: 'UNPAID',
+        status: 'PENDING',
+        machine_name: 'Farm Equipment',
+        village: 'Punjab',
         ...b,
         farmer_rating_avg: farmerStats.avg,
         farmer_rating_count: farmerStats.count,
