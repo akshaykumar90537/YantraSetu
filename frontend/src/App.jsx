@@ -18,6 +18,9 @@ import {
   ShieldCheck,
   ChevronRight,
   WifiOff,
+  Menu,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from 'lucide-react';
 import { api } from './api';
 import { dict, INR, dt, translate } from './locales';
@@ -41,6 +44,12 @@ export function App() {
 
   const [u, setUser] = useState(null);
   const [tab, setTab] = useState('explore');
+  const [sidebarOpen, setSidebarOpen] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return window.innerWidth > 1024;
+    }
+    return true;
+  });
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [modal, setModal] = useState(null);
@@ -214,23 +223,45 @@ export function App() {
   const completed = rows.filter((b) => b.status === 'COMPLETED');
 
   return (
-    <div className="app">
-      <aside className="sidebar">
-        <a
-          className="brand"
-          href="#"
-          onClick={(e) => {
-            e.preventDefault();
-            setTab('explore');
-          }}
-        >
-          <span className="brand-mark">
-            <Sprout size={25} />
-          </span>
-          <span>
-            YantraSetu<small>{t('growingTogether')}</small>
-          </span>
-        </a>
+    <div className={`app ${sidebarOpen ? 'sidebar-open' : 'sidebar-collapsed'}`}>
+      {/* Mobile Backdrop */}
+      {sidebarOpen && (
+        <div
+          className="sidebar-backdrop"
+          onClick={() => setSidebarOpen(false)}
+          aria-hidden="true"
+        />
+      )}
+
+      <aside className={`sidebar ${sidebarOpen ? 'open' : 'collapsed'}`}>
+        <div className="sidebar-header">
+          <a
+            className="brand"
+            href="#"
+            onClick={(e) => {
+              e.preventDefault();
+              setTab('explore');
+              if (window.innerWidth <= 760) setSidebarOpen(false);
+            }}
+          >
+            <span className="brand-mark">
+              <Sprout size={25} />
+            </span>
+            <span>
+              YantraSetu<small>{t('growingTogether')}</small>
+            </span>
+          </a>
+          <button
+            type="button"
+            className="icon sidebar-collapse-btn"
+            aria-label="Collapse sidebar"
+            onClick={() => setSidebarOpen(false)}
+            title="Collapse sidebar"
+          >
+            <PanelLeftClose size={18} />
+          </button>
+        </div>
+
         <div className="workspace-label">{t('companion')}</div>
         <nav>
           {nav.map(([key, Icon, label]) => (
@@ -240,6 +271,7 @@ export function App() {
               onClick={() => {
                 setTab(key);
                 setError('');
+                if (window.innerWidth <= 760) setSidebarOpen(false);
                 if (u) run(load);
               }}
             >
@@ -290,9 +322,20 @@ export function App() {
 
       <div className="main">
         <header>
-          <div className="breadcrumb">
-            YantraSetu <ChevronRight size={14} />
-            <strong>{t(tab)}</strong>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <button
+              type="button"
+              className="sidebar-toggle-btn"
+              aria-label={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
+              onClick={() => setSidebarOpen(!sidebarOpen)}
+              title={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
+            >
+              {sidebarOpen ? <PanelLeftClose size={19} /> : <Menu size={20} />}
+            </button>
+            <div className="breadcrumb">
+              YantraSetu <ChevronRight size={14} />
+              <strong>{t(tab)}</strong>
+            </div>
           </div>
           <div className="header-right">
             {u ? (

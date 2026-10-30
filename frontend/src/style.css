@@ -7,3 +7,102 @@
 @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;animation:none!important;transition:none!important}}
 
 .mobile-auth{display:none}@media(max-width:760px){.mobile-auth{display:inline-flex}}
+
+/* Sidebar Toggle & Responsive Drawer Enhancements */
+.sidebar {
+  transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  z-index: 20;
+}
+.sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+}
+.sidebar-collapse-btn {
+  background: #f1f4ed;
+  border: 1px solid #dce4d5;
+  border-radius: 6px;
+  padding: 6px;
+  color: #466047;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.sidebar-collapse-btn:hover {
+  background: #e2eccf;
+  color: #173822;
+}
+.main {
+  transition: margin-left 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.sidebar-collapsed .sidebar {
+  transform: translateX(-100%);
+}
+.sidebar-collapsed .main {
+  margin-left: 0 !important;
+}
+.sidebar-toggle-btn {
+  background: #f1f5f0;
+  border: 1px solid #dce4d5;
+  border-radius: 8px;
+  padding: 7px 9px;
+  color: #28583e;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+}
+.sidebar-toggle-btn:hover {
+  background: #e4ecda;
+  color: #153a23;
+}
+.sidebar-backdrop {
+  display: none;
+}
+@media (max-width: 760px) {
+  .sidebar {
+    position: fixed;
+    width: 275px;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    padding: 24px 18px 20px;
+    background: #fff;
+    border-right: 1px solid var(--line);
+    transform: translateX(-100%);
+    box-shadow: 0 0 35px rgba(0,0,0,0.25);
+    z-index: 100;
+  }
+  .sidebar.open {
+    transform: translateX(0) !important;
+  }
+  .sidebar nav {
+    flex-direction: column;
+    overflow-x: visible;
+    margin-top: 20px;
+  }
+  .nav-item {
+    width: 100%;
+    margin-bottom: 5px;
+  }
+  .workspace-label, .sidebar-note, .account {
+    display: block !important;
+  }
+  .sidebar-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(20, 41, 28, 0.45);
+    backdrop-filter: blur(2px);
+    z-index: 99;
+  }
+  .main {
+    margin-left: 0 !important;
+  }
+}
