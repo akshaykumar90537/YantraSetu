@@ -1,4 +1,4 @@
-import os, secrets, hashlib, hmac, json
+import os, secrets, hashlib, hmac, json, math
 from pathlib import Path
 from uuid import uuid4, UUID
 from datetime import datetime, timedelta, timezone, date
@@ -932,6 +932,77 @@ def org_bookings(ident:UUID,u=Depends(user)):
     with db() as c:
         require(one(c,'SELECT id FROM organizations WHERE id=%s AND manager_id=%s',(ident,u['id'])) is not None)
         return many(c,BOOKING_SELECT+' WHERE m.organization_id=%s ORDER BY b.start_at',(ident,))
+
+def generate_agro_weather(latitude: float = 30.901, longitude: float = 75.857):
+    now = datetime.now(timezone.utc)
+    base_max, base_min, base_hum = 29, 15, 55
+    month = now.month
+    if month in (12, 1, 2):
+        base_max, base_min, base_hum = 20, 8, 70
+    elif month in (6, 7, 8, 9):
+        base_max, base_min, base_hum = 34, 26, 80
+    elif month in (3, 4, 5):
+        base_max, base_min, base_hum = 35, 20, 40
+
+    hour = now.hour
+    h_factor = math.sin(((hour - 8) / 24) * 2 * math.pi)
+    curr_t = round(((base_max + base_min) / 2) + ((base_max - base_min) / 2) * h_factor)
+    curr_hum = max(30, min(90, round(base_hum - h_factor * 15)))
+
+    daily_times = [(now + timedelta(days=d)).strftime('%Y-%m-%d') for d in range(7)]
+    daily_max = [base_max + (1 if d % 3 == 0 else -1 if d % 2 == 0 else 0) for d in range(7)]
+    daily_min = [base_min + (1 if d % 3 == 0 else -1 if d % 2 == 0 else 0) for d in range(7)]
+    daily_codes = [1 if d == 3 else 2 if d == 5 else 0 for d in range(7)]
+    daily_precip = [max(0, 5 + (1 if d % 3 == 0 else 0)) for d in range(7)]
+
+    hourly_times = [(now + timedelta(hours=h)).strftime('%Y-%m-%dT%H:00') for h in range(48)]
+    hourly_t = [round(((base_max + base_min) / 2) + ((base_max - base_min) / 2) * math.sin((((now + timedelta(hours=h)).hour - 8) / 24) * 2 * math.pi)) for h in range(48)]
+    hourly_precip = [5 for _ in range(48)]
+    hourly_codes = [0 for _ in range(48)]
+    hourly_wind = [8 for _ in range(48)]
+
+    return {
+        'latitude': latitude,
+        'longitude': longitude,
+        'timezone': 'Asia/Kolkata',
+        'is_fallback': True,
+        'current': {
+            'time': now.isoformat(),
+            'temperature_2m': curr_t,
+            'relative_humidity_2m': curr_hum,
+            'precipitation': 0.0,
+            'weather_code': 0,
+            'wind_speed_10m': 9.0,
+        },
+        'hourly': {
+            'time': hourly_times,
+            'temperature_2m': hourly_t,
+            'precipitation_probability': hourly_precip,
+            'weather_code': hourly_codes,
+            'wind_speed_10m': hourly_wind,
+        },
+        'daily': {
+            'time': daily_times,
+            'weather_code': daily_codes,
+            'temperature_2m_max': daily_max,
+            'temperature_2m_min': daily_min,
+            'precipitation_probability_max': daily_precip,
+        }
+    }
+
+@app.get('/api/weather')
+def weather(latitude: float = 30.901, longitude: float = 75.857):
+    import urllib.request
+    url = f"https://api.open-meteo.com/v1/forecast?latitude={latitude}&longitude={longitude}&current=temperature_2m,relative_humidity_2m,precipitation,weather_code,wind_speed_10m&hourly=temperature_2m,precipitation_probability,weather_code,wind_speed_10m&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=Asia%2FKolkata&forecast_days=7"
+    try:
+        req = urllib.request.Request(url, headers={'User-Agent': 'YantraSetu/2.0'})
+        with urllib.request.urlopen(req, timeout=3) as resp:
+            data = json.loads(resp.read().decode())
+            if not data.get('error') and data.get('current'):
+                return data
+    except Exception:
+        pass
+    return generate_agro_weather(latitude, longitude)
 
 @app.exception_handler(ValueError)
 async def invalid(request,exc):

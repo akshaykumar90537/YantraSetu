@@ -637,6 +637,10 @@ function handleDemoFallback(path, data, method) {
     return [];
   }
 
+  if (path.startsWith('/weather')) {
+    return { status: 'ok', source: 'agro_model' };
+  }
+
   if (path === '/health') {
     return { status: 'ok', database: 'demo_fallback', version: '0.1.0' };
   }

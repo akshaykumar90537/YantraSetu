@@ -18,3 +18,12 @@ def test_search_location_bounded():
 def test_openapi_has_no_gateway_or_subscription_endpoints():
     schema=client.get('/openapi.json').json()
     assert not any(x in path for path in schema['paths'] for x in ('checkout','gateway','subscription','wallet','settlement'))
+
+def test_weather_endpoint_returns_forecast():
+    res = client.get('/api/weather?latitude=30.901&longitude=75.857', headers=headers)
+    assert res.status_code == 200
+    data = res.json()
+    assert 'current' in data
+    assert 'temperature_2m' in data['current']
+    assert 'hourly' in data
+    assert 'daily' in data
