@@ -518,6 +518,45 @@ function Workspace({ initialUser, onLogout }) {
                 );
                 return (
                   <>
+                    {u?.roles?.includes('owner') && fleet.length > 0 && (
+                      <div style={{
+                        background: '#f0fdf4',
+                        border: '1px solid #bbf7d0',
+                        borderRadius: '12px',
+                        padding: '12px 18px',
+                        marginBottom: '20px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: '12px',
+                        fontSize: '13px',
+                        color: '#166534',
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <Tractor size={20} color="#15803d" />
+                          <span>
+                            You have <strong>{fleet.length}</strong> equipment listed in your fleet. <em>(Your own machinery is managed under the Fleet tab to prevent self-booking).</em>
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          className="outline"
+                          style={{
+                            fontSize: '12px',
+                            fontWeight: '600',
+                            padding: '6px 14px',
+                            borderColor: '#86efac',
+                            background: '#ffffff',
+                            color: '#166534',
+                            cursor: 'pointer',
+                            whiteSpace: 'nowrap'
+                          }}
+                          onClick={() => setTab('fleet')}
+                        >
+                          Manage Fleet →
+                        </button>
+                      </div>
+                    )}
                     <div className="section-title">
                       <div>
                         <div className="eyebrow muted">{t('nearSubtitle')}</div>
@@ -1051,9 +1090,9 @@ function Workspace({ initialUser, onLogout }) {
                   run(async () => {
                     await api('/machines', data);
                     await load();
-                    await search();
                     setModal(null);
-                    setNotice('Machine listed.');
+                    setNotice('Machine listed successfully! Viewing in your Fleet.');
+                    setTab('fleet');
                   })
                 }
                 lang={lang}

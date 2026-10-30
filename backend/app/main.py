@@ -25,16 +25,18 @@ from app.email_auth import email_mode, send_email, verify_google
 
 app=FastAPI(title='YantraSetu',version='0.1.0')
 ORIGIN=os.getenv('FRONTEND_ORIGIN','http://localhost:5173')
+ALLOWED_ORIGINS = {ORIGIN, 'http://localhost:5173', 'http://127.0.0.1:5173'}
 SECRET=os.environ.get('OTP_SECRET','')
 if len(SECRET)<32: raise RuntimeError('Set OTP_SECRET to at least 32 random characters')
 DEV=os.getenv('APP_ENV','development')=='development'
 
-app.add_middleware(CORSMiddleware,allow_origins=[ORIGIN],allow_credentials=True,allow_methods=['GET','POST','PATCH'],allow_headers=['Content-Type','X-Requested-With'])
+app.add_middleware(CORSMiddleware,allow_origins=list(ALLOWED_ORIGINS),allow_credentials=True,allow_methods=['GET','POST','PATCH'],allow_headers=['Content-Type','X-Requested-With'])
 
 @app.middleware('http')
 async def safety_headers(request,call_next):
     if request.method in ('POST','PATCH','DELETE','PUT'):
-        if request.headers.get('x-requested-with')!='YantraSetu' or request.headers.get('origin',ORIGIN)!=ORIGIN:
+        req_origin = request.headers.get('origin')
+        if request.headers.get('x-requested-with')!='YantraSetu' or (req_origin is not None and req_origin not in ALLOWED_ORIGINS):
             _ = await request.body()
             return Response('Invalid request origin',403)
     response=await call_next(request)

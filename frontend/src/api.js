@@ -15,6 +15,9 @@ export async function api(path, data, customMethod) {
   try {
     body = JSON.parse(text);
   } catch {
+    if (!response.ok) {
+      throw new Error(text || `Request failed with status ${response.status}`);
+    }
     throw new Error('The API is unavailable. Start PostgreSQL and the backend using the README.');
   }
 
