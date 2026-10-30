@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { Navigation, MapPin } from 'lucide-react';
+import { Navigation, MapPin, Search as SearchIcon, Loader2, X } from 'lucide-react';
 import { INR, translate } from '../locales';
 
 export function MapPicker({
@@ -10,7 +10,7 @@ export function MapPicker({
   machines = [],
   onSelectLocation,
   onSelectMachine,
-  height = '380px',
+  height = '420px',
   showLocate = true,
   interactive = true,
   lang = 'en',
@@ -20,9 +20,12 @@ export function MapPicker({
   const userMarkerRef = useRef(null);
   const circleRef = useRef(null);
   const machineMarkersRef = useRef([]);
+
   const [locating, setLocating] = useState(false);
   const [locateNotice, setLocateNotice] = useState('');
   const [locateError, setLocateError] = useState('');
+  const [villageSearch, setVillageSearch] = useState('');
+  const [searchingVillage, setSearchingVillage] = useState(false);
 
   const t = (k, p) => translate(lang, k, p);
 
@@ -222,10 +225,11 @@ export function MapPicker({
 
   function applyLocation(latitude, longitude, sourceMsg) {
     setLocating(false);
+    setSearchingVillage(false);
     setLocateError('');
     if (sourceMsg) {
       setLocateNotice(sourceMsg);
-      setTimeout(() => setLocateNotice(''), 5000);
+      setTimeout(() => setLocateNotice(''), 6000);
     }
     const latStr = Number(latitude).toFixed(5);
     const lonStr = Number(longitude).toFixed(5);
@@ -237,136 +241,248 @@ export function MapPicker({
     }
   }
 
-  // Robust Multi-tier Location Resolver (handles desktop/wifi without GPS chip)
+  // Live GPS Handler with fresh lock and accurate hardware detection
   function handleUseMyLocation() {
+    if (!navigator.geolocation) {
+      setLocateError('Geolocation is not supported by your browser.');
+      return;
+    }
     setLocating(true);
     setLocateError('');
     setLocateNotice('');
 
-    // Strategy 1: Browser standard location (enableHighAccuracy: false avoids hardware GPS satellite spin/timeout)
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          const { latitude, longitude } = position.coords;
-          applyLocation(latitude, longitude, '📍 Location found via device');
-        },
-        (geoErr) => {
-          // Strategy 2: If browser times out or is denied on desktop, resolve via network IP
-          fetch('https://ipwho.is/')
-            .then((r) => r.json())
-            .then((data) => {
-              if (data && data.success && data.latitude && data.longitude) {
-                applyLocation(
-                  data.latitude,
-                  data.longitude,
-                  `📍 Located near ${data.city || data.region || 'India'} (network)`
-                );
-              } else {
-                throw new Error('IP locate failed');
-              }
-            })
-            .catch(() => {
-              // Strategy 3: Graceful fallback to default Ludhiana hub
-              applyLocation(30.901, 75.857, '📍 Centered on Punjab hub (Ludhiana)');
-            });
-        },
-        { timeout: 4000, enableHighAccuracy: false, maximumAge: 300000 }
-      );
-    } else {
-      // Browser does not support geolocation
-      fetch('https://ipwho.is/')
-        .then((r) => r.json())
-        .then((data) => {
-          if (data && data.success && data.latitude && data.longitude) {
-            applyLocation(data.latitude, data.longitude, `📍 Located near ${data.city || 'India'}`);
-          } else {
-            throw new Error();
-          }
-        })
-        .catch(() => {
-          applyLocation(30.901, 75.857, '📍 Centered on Punjab hub (Ludhiana)');
-        });
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const { latitude, longitude, accuracy } = position.coords;
+        applyLocation(latitude, longitude, `📍 Live GPS locked (accurate to ±${Math.round(accuracy || 10)}m)`);
+      },
+      (geoErr) => {
+        setLocating(false);
+        if (geoErr.code === 1) {
+          setLocateError('🔒 Location permission blocked. Click the lock/site icon in your browser address bar to allow location.');
+        } else if (geoErr.code === 2) {
+          setLocateError('📡 No hardware GPS chip on this PC. Please search your village/tehsil above or tap directly on the map.');
+        } else if (geoErr.code === 3) {
+          setLocateError('📡 GPS timed out on desktop (PC broadband routes via ISP gateway). Please search your village above or tap on the map.');
+        } else {
+          setLocateError(geoErr.message || 'Unable to retrieve location.');
+        }
+      },
+      { timeout: 10000, enableHighAccuracy: true, maximumAge: 0 }
+    );
+  }
+
+  // OpenStreetMap Village / Town Geocoding Search (restricted to India)
+  async function handleSearchVillage(e) {
+    if (e) e.preventDefault();
+    const query = villageSearch.trim();
+    if (!query) return;
+
+    setSearchingVillage(true);
+    setLocateError('');
+    setLocateNotice('');
+
+    try {
+      const res = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&countrycodes=in&format=json&limit=1`, {
+        headers: { Accept: 'application/json' },
+      });
+      const data = await res.json();
+      if (data && data.length > 0) {
+        const item = data[0];
+        const displayName = item.display_name ? item.display_name.split(',').slice(0, 3).join(',') : (item.name || query);
+        applyLocation(Number(item.lat), Number(item.lon), `📍 Found: ${displayName}`);
+      } else {
+        setLocateError(`Could not find "${query}". Try searching with district or state (e.g. "${query}, Punjab").`);
+        setSearchingVillage(false);
+      }
+    } catch {
+      setLocateError('Location search service temporarily unavailable. Please tap on map to drop pin.');
+      setSearchingVillage(false);
     }
   }
 
-  return (
-    <div className="map-picker-wrapper" style={{ position: 'relative', width: '100%', borderRadius: '12px', overflow: 'hidden', border: '1px solid #d4decb' }}>
-      <div ref={mapContainerRef} style={{ width: '100%', height }} />
+  // Quick Agricultural Region Presets
+  const quickHubs = [
+    { name: 'Ludhiana', lat: 30.901, lon: 75.857 },
+    { name: 'Khanna', lat: 30.701, lon: 76.222 },
+    { name: 'Jalandhar', lat: 31.326, lon: 75.576 },
+    { name: 'Bathinda', lat: 30.211, lon: 74.945 },
+    { name: 'Amritsar', lat: 31.634, lon: 74.872 },
+    { name: 'Patiala', lat: 30.339, lon: 76.387 },
+  ];
 
-      {showLocate && (
-        <div style={{ position: 'absolute', top: '12px', right: '12px', zIndex: 1000, display: 'flex', flexDirection: 'column', gap: '6px', alignItems: 'flex-end' }}>
+  return (
+    <div className="map-picker-wrapper" style={{ position: 'relative', width: '100%', borderRadius: '12px', overflow: 'hidden', border: '1px solid #d4decb', display: 'flex', flexDirection: 'column' }}>
+      
+      {/* Top Search & Preset Bar */}
+      <div style={{
+        background: '#f8fafc',
+        borderBottom: '1px solid #e2e8f0',
+        padding: '10px 14px',
+        display: 'flex',
+        flexWrap: 'wrap',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: '8px',
+      }}>
+        {/* Village Search Form */}
+        <form onSubmit={handleSearchVillage} style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: '1 1 280px', maxWidth: '420px' }}>
+          <div style={{ position: 'relative', width: '100%' }}>
+            <input
+              type="text"
+              placeholder="Search your village, town or tehsil…"
+              value={villageSearch}
+              onChange={(e) => setVillageSearch(e.target.value)}
+              style={{
+                width: '100%',
+                padding: '7px 32px 7px 10px',
+                borderRadius: '6px',
+                border: '1px solid #cbd5e1',
+                fontSize: '12px',
+                outline: 'none',
+              }}
+            />
+            {villageSearch && (
+              <button
+                type="button"
+                onClick={() => setVillageSearch('')}
+                style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8' }}
+              >
+                <X size={14} />
+              </button>
+            )}
+          </div>
           <button
-            type="button"
-            className="map-locate-btn"
-            onClick={handleUseMyLocation}
-            disabled={locating}
-            title={t('location')}
+            type="submit"
+            disabled={searchingVillage || !villageSearch.trim()}
             style={{
-              background: 'white',
-              border: '1px solid #cbd5e1',
-              borderRadius: '8px',
-              padding: '8px 12px',
-              boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
+              background: '#2e7d32',
+              color: 'white',
+              border: 'none',
+              borderRadius: '6px',
+              padding: '7px 12px',
               fontSize: '12px',
               fontWeight: '600',
-              color: '#1b5e20',
               cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+              whiteSpace: 'nowrap',
             }}
           >
-            <Navigation size={15} className={locating ? 'animate-spin' : ''} />
-            <span>{locating ? 'Locating…' : 'Use My GPS Location'}</span>
+            {searchingVillage ? <Loader2 size={14} className="animate-spin" /> : <SearchIcon size={14} />}
+            <span>Find Village</span>
           </button>
-          {locateNotice && (
-            <span style={{
-              background: '#dcfce7',
-              color: '#166534',
-              border: '1px solid #86efac',
-              fontSize: '11px',
-              fontWeight: '500',
-              padding: '4px 8px',
-              borderRadius: '6px',
-              maxWidth: '240px',
-              boxShadow: '0 2px 6px rgba(0,0,0,0.1)',
-            }}>
-              {locateNotice}
-            </span>
-          )}
-          {locateError && (
-            <span style={{
-              background: '#fee2e2',
-              color: '#991b1b',
-              border: '1px solid #fca5a5',
-              fontSize: '11px',
-              fontWeight: '500',
-              padding: '4px 8px',
-              borderRadius: '6px',
-              maxWidth: '240px',
-              boxShadow: '0 2px 6px rgba(0,0,0,0.1)',
-            }}>
-              {locateError}
-            </span>
-          )}
-        </div>
-      )}
+        </form>
 
-      <div style={{
-        position: 'absolute',
-        bottom: '8px',
-        left: '12px',
-        zIndex: 1000,
-        background: 'rgba(255,255,255,0.92)',
-        backdropFilter: 'blur(4px)',
-        padding: '4px 10px',
-        borderRadius: '6px',
-        fontSize: '11px',
-        color: '#475569',
-        border: '1px solid #e2e8f0',
-        pointerEvents: 'none',
-      }}>
-        📍 Tap map or drag green pin to change location
+        {/* Quick Hub Chips */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '5px', flexWrap: 'wrap' }}>
+          <span style={{ fontSize: '11px', color: '#64748b', fontWeight: '600' }}>Quick Hubs:</span>
+          {quickHubs.map((hub) => (
+            <button
+              key={hub.name}
+              type="button"
+              onClick={() => applyLocation(hub.lat, hub.lon, `📍 Set to ${hub.name}`)}
+              style={{
+                background: '#fff',
+                border: '1px solid #cbd5e1',
+                borderRadius: '12px',
+                padding: '3px 8px',
+                fontSize: '11px',
+                color: '#334155',
+                cursor: 'pointer',
+                fontWeight: '500',
+              }}
+            >
+              {hub.name}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Map Canvas */}
+      <div style={{ position: 'relative', width: '100%', height }}>
+        <div ref={mapContainerRef} style={{ width: '100%', height: '100%' }} />
+
+        {/* Floating GPS Button */}
+        {showLocate && (
+          <div style={{ position: 'absolute', top: '12px', right: '12px', zIndex: 1000, display: 'flex', flexDirection: 'column', gap: '6px', alignItems: 'flex-end' }}>
+            <button
+              type="button"
+              className="map-locate-btn"
+              onClick={handleUseMyLocation}
+              disabled={locating}
+              title={t('location')}
+              style={{
+                background: 'white',
+                border: '1px solid #cbd5e1',
+                borderRadius: '8px',
+                padding: '8px 14px',
+                boxShadow: '0 2px 10px rgba(0,0,0,0.18)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                fontSize: '12px',
+                fontWeight: '600',
+                color: '#1b5e20',
+                cursor: 'pointer',
+              }}
+            >
+              <Navigation size={15} className={locating ? 'animate-spin' : ''} />
+              <span>{locating ? 'Acquiring GPS Signal…' : 'Use My GPS Location'}</span>
+            </button>
+
+            {locateNotice && (
+              <span style={{
+                background: '#dcfce7',
+                color: '#166534',
+                border: '1px solid #86efac',
+                fontSize: '11px',
+                fontWeight: '500',
+                padding: '6px 10px',
+                borderRadius: '6px',
+                maxWidth: '280px',
+                boxShadow: '0 2px 8px rgba(0,0,0,0.12)',
+              }}>
+                {locateNotice}
+              </span>
+            )}
+
+            {locateError && (
+              <span style={{
+                background: '#fee2e2',
+                color: '#991b1b',
+                border: '1px solid #fca5a5',
+                fontSize: '11px',
+                fontWeight: '500',
+                padding: '6px 10px',
+                borderRadius: '6px',
+                maxWidth: '280px',
+                boxShadow: '0 2px 8px rgba(0,0,0,0.12)',
+              }}>
+                {locateError}
+              </span>
+            )}
+          </div>
+        )}
+
+        {/* Bottom Helper Bar */}
+        <div style={{
+          position: 'absolute',
+          bottom: '8px',
+          left: '12px',
+          zIndex: 1000,
+          background: 'rgba(255,255,255,0.92)',
+          backdropFilter: 'blur(4px)',
+          padding: '4px 10px',
+          borderRadius: '6px',
+          fontSize: '11px',
+          color: '#475569',
+          border: '1px solid #e2e8f0',
+          pointerEvents: 'none',
+        }}>
+          📍 Tap anywhere on map or drag green pin to place your field
+        </div>
       </div>
     </div>
   );
