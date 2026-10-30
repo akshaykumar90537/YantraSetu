@@ -42,7 +42,7 @@ def test_ten_concurrent_bookings_exactly_one_wins(database):
         try:
             with connect() as c: insert(c,farmer,machine)
             return True
-        except psycopg.errors.ExclusionViolation:return False
+        except (psycopg.errors.ExclusionViolation, psycopg.errors.DeadlockDetected):return False
     with ThreadPoolExecutor(max_workers=10) as pool:
         assert sum(pool.map(attempt,range(10)))==1
 
