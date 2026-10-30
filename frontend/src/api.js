@@ -22,7 +22,10 @@ export async function api(path, data, customMethod) {
     const errorMsg = typeof body.detail === 'string' 
       ? body.detail 
       : (body.detail ? JSON.stringify(body.detail) : JSON.stringify(body));
-    throw new Error(errorMsg);
+    const error = new Error(errorMsg);
+    error.status = response.status;
+    if (response.status === 401 && path !== '/me' && !path.startsWith('/auth/')) window.dispatchEvent(new Event('ys:unauthorized'));
+    throw error;
   }
 
   return body;

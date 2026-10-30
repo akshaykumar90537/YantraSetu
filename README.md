@@ -149,3 +149,7 @@ Press **Ctrl+C** in the frontend and backend terminals. This stops the applicati
 ## External decisions
 
 No external service is active. See `docs/EXTERNAL_SERVICES.md` for live-SMS requirements. Hosting, real pilot data, liability terms and public deployment still require the project owner's decisions. Docker is excluded from the current scope and must not be reintroduced without a new request.
+
+## Public home page and email / Google sign-in
+
+The public home page now precedes the authenticated workspace. Email OTP and Continue with Google (followed by an email OTP) are available after configuration. See [authentication setup](docs/AUTH_SETUP.md) for migration 003, SMTP settings, Google client setup, security behavior and test limitations. Existing phone login remains available in development.

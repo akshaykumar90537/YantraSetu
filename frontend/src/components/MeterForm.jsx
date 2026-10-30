@@ -58,7 +58,10 @@ export function MeterForm({ booking: b, run, busy, lang = 'en' }) {
         </button>
       </form>
 
-      {result && (
+      {result && !result.development_code && (
+        <div className="banner" role="status">Verification email submitted for delivery to the farmer. Ask them to check their inbox and confirm this reading within 5 minutes.</div>
+      )}
+      {result?.development_code && (
         <div className="dev-code">
           {t('devOnlyCode')}: <strong>{result.development_code}</strong>
           <small>{t('devCodeInstruction')}</small>

@@ -39,12 +39,17 @@ import { MapPicker } from './components/MapPicker';
 import { RatingModal } from './components/RatingModal';
 import { WeatherDashboard } from './components/WeatherDashboard';
 import './style.css';
+import { AuthGate } from './components/AuthGate';
 
 export function App() {
+  return <AuthGate>{(user, onLogout) => <Workspace key={user.id} initialUser={user} onLogout={onLogout} />}</AuthGate>;
+}
+
+function Workspace({ initialUser, onLogout }) {
   const [lang, setLang] = useState(localStorage.getItem('ys-lang') || 'en');
   const t = (k, p) => translate(lang, k, p);
 
-  const [u, setUser] = useState(null);
+  const [u, setUser] = useState(initialUser);
   const [tab, setTab] = useState('explore');
   const [sidebarOpen, setSidebarOpen] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -74,7 +79,6 @@ export function App() {
   const [showMap, setShowMap] = useState(true);
 
   useEffect(() => {
-    api('/me').then(setUser).catch(() => {});
     search();
 
     const onOnline = () => setOnline(true);
@@ -135,7 +139,7 @@ export function App() {
 
   useEffect(() => {
     if (u) {
-      load();
+      load().catch(e => setError(e.message));
       setDrafts(JSON.parse(localStorage.getItem('ys-drafts-' + u.id) || '[]'));
     } else {
       setRows([]);
@@ -298,7 +302,7 @@ export function App() {
                 onClick={() =>
                   run(async () => {
                     await api('/auth/logout', {});
-                    setUser(null);
+                    onLogout();
                     setTab('explore');
                   })
                 }
@@ -342,7 +346,7 @@ export function App() {
                 onClick={() =>
                   run(async () => {
                     await api('/auth/logout', {});
-                    setUser(null);
+                    onLogout();
                     setTab('explore');
                   })
                 }
