@@ -59,6 +59,7 @@ export function App() {
   const [searched, setSearched] = useState(false);
   const [routeResult, setRouteResult] = useState(null);
   const [drafts, setDrafts] = useState([]);
+  const [showMap, setShowMap] = useState(true);
 
   useEffect(() => {
     api('/me').then(setUser).catch(() => {});
@@ -477,13 +478,51 @@ export function App() {
                       : t('listingsCount', { count: machines.length, radius })}
                   </p>
                 </div>
-                <button
-                  className="outline"
-                  onClick={() => (u ? setModal({ type: 'machine' }) : setModal({ type: 'login' }))}
-                >
-                  <Plus size={16} /> {t('listMachine')}
-                </button>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button
+                    type="button"
+                    className={showMap ? 'primary' : 'outline'}
+                    onClick={() => setShowMap(!showMap)}
+                    style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+                  >
+                    <MapPin size={16} />
+                    {showMap ? 'Hide Map' : 'Show Map'}
+                  </button>
+                  <button
+                    className="outline"
+                    onClick={() => (u ? setModal({ type: 'machine' }) : setModal({ type: 'login' }))}
+                  >
+                    <Plus size={16} /> {t('listMachine')}
+                  </button>
+                </div>
               </div>
+
+              {showMap && (
+                <div style={{ marginBottom: '24px' }}>
+                  <MapPicker
+                    center={[Number(lat) || 30.901, Number(lon) || 75.857]}
+                    radius={Number(radius) || 5}
+                    machines={machines}
+                    onSelectLocation={(newLat, newLon) => {
+                      setLat(newLat);
+                      setLon(newLon);
+                      const key = `ys-search-${newLat}-${newLon}-${radius}-${category}`;
+                      api(
+                        `/machines?latitude=${newLat}&longitude=${newLon}&radius=${radius}&category=${encodeURIComponent(category)}`
+                      )
+                        .then((data) => {
+                          setMachines(data);
+                          localStorage.setItem(key, JSON.stringify({ at: new Date().toISOString(), data }));
+                        })
+                        .catch(() => {});
+                    }}
+                    onSelectMachine={openBooking}
+                    height="380px"
+                    showLocate={true}
+                    lang={lang}
+                  />
+                </div>
+              )}
 
               <div className="cards">
                 {machines.map((m, i) => (
