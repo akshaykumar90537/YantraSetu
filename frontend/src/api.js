@@ -113,6 +113,50 @@ function getStoredUser() {
   return null;
 }
 
+// Generate deterministic UUIDv5-like unique identifier for each phone/email
+function generateDeterministicUuid(str) {
+  let h1 = 0xdeadbeef, h2 = 0x41c6ce57, h3 = 0x3039c716, h4 = 0x19a0f2b3;
+  for (let i = 0; i < str.length; i++) {
+    const ch = str.charCodeAt(i);
+    h1 = Math.imul(h1 ^ ch, 2654435761);
+    h2 = Math.imul(h2 ^ ch, 1597334677);
+    h3 = Math.imul(h3 ^ ch, 974533199);
+    h4 = Math.imul(h4 ^ ch, 374761393);
+  }
+  const toHex = (n) => (n >>> 0).toString(16).padStart(8, '0');
+  const hex = (toHex(h1) + toHex(h2) + toHex(h3) + toHex(h4)).toLowerCase();
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-5${hex.slice(13, 16)}-a${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
+}
+
+function getRegisteredDemoUsers() {
+  try {
+    const raw = localStorage.getItem('ys_demo_users_db');
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  const initial = {
+    '+919000000002': {
+      id: '00000000-0000-4000-8000-000000000002',
+      phone: '+919000000002',
+      email: 'harpreet@example.com',
+      name: 'Harpreet Singh (Owner)',
+      roles: ['farmer', 'owner'],
+      language: 'en',
+    },
+  };
+  try {
+    localStorage.setItem('ys_demo_users_db', JSON.stringify(initial));
+  } catch {}
+  return initial;
+}
+
+function saveRegisteredDemoUsers(users) {
+  try {
+    localStorage.setItem('ys_demo_users_db', JSON.stringify(users));
+  } catch {}
+}
+
+const demoPendingChallenges = {};
+
 function handleDemoFallback(path, data, method) {
   const user = getStoredUser();
 
@@ -135,35 +179,79 @@ function handleDemoFallback(path, data, method) {
   }
 
   if (path === '/auth/request') {
+    const phone = data?.phone ? String(data.phone).trim() : '';
+    const users = getRegisteredDemoUsers();
+    const existing = phone && users[phone];
+    const isNewUser = !existing;
+    const challengeId = 'demo-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7);
+
+    demoPendingChallenges[challengeId] = {
+      phone,
+      is_new_user: isNewUser,
+      created_at: Date.now(),
+    };
+
     return {
-      challenge_id: 'demo-' + Date.now(),
+      challenge_id: challengeId,
       expires_in: 300,
       delivery: 'SIMULATED_NOT_SENT',
       development_code: '123456',
       message: 'Demo mode active. Use code: 123456',
-      is_new_user: false,
+      is_new_user: isNewUser,
     };
   }
 
   if (path === '/auth/email/request') {
+    const email = data?.email ? String(data.email).trim().toLowerCase() : '';
+    const users = getRegisteredDemoUsers();
+    const existing = email && users[email];
+    const isNewUser = !existing;
+    const challengeId = 'demo-email-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7);
+
+    demoPendingChallenges[challengeId] = {
+      email,
+      is_new_user: isNewUser,
+      created_at: Date.now(),
+    };
+
     return {
-      challenge_id: 'demo-email-' + Date.now(),
+      challenge_id: challengeId,
       expires_in: 300,
       delivery: 'SIMULATED_NOT_SENT',
       development_code: '123456',
       message: 'Demo mode active. Use code: 123456',
+      is_new_user: isNewUser,
     };
   }
 
   if (path === '/auth/verify' || path === '/auth/email/verify') {
-    const u = {
-      id: '00000000-0000-4000-8000-000000000002',
-      name: data?.name || 'Harpreet Singh (Owner)',
-      phone: data?.phone || '+919000000002',
-      email: data?.email || 'harpreet@example.com',
-      roles: data?.roles && data.roles.length ? data.roles : ['farmer', 'owner'],
-      language: data?.language || 'en',
-    };
+    const ch = demoPendingChallenges[data?.challenge_id] || {};
+    const phone = data?.phone || ch.phone || '';
+    const email = data?.email || ch.email || '';
+    const identifier = phone || email || '+919000000002';
+    const users = getRegisteredDemoUsers();
+
+    let u = users[identifier];
+    if (!u) {
+      // New user registration: require a valid name
+      if (!data?.name || data.name.trim().length < 2) {
+        const err = new Error('Your name is required to complete new account registration');
+        err.status = 422;
+        throw err;
+      }
+      const uniqueId = generateDeterministicUuid(identifier);
+      u = {
+        id: uniqueId,
+        phone: phone || null,
+        email: email || null,
+        name: data.name.trim(),
+        roles: data?.roles && data.roles.length ? data.roles : ['farmer'],
+        language: data?.language || 'en',
+      };
+      users[identifier] = u;
+      saveRegisteredDemoUsers(users);
+    }
+
     try {
       localStorage.setItem('ys_demo_user', JSON.stringify(u));
     } catch {}

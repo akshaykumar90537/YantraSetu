@@ -320,3 +320,4 @@ export async function searchOnlineVillages(query, limit = 5) {
     return [];
   }
 }
+

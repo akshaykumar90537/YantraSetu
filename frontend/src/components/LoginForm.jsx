@@ -271,6 +271,7 @@ export function LoginForm({ busy, run, onUser, lang = 'en', setLang }) {
                       await api('/auth/verify', {
                         challenge_id: challenge.challenge_id,
                         code: f.get('code'),
+                        phone: destination,
                       })
                     )
                   );
@@ -337,6 +338,7 @@ export function LoginForm({ busy, run, onUser, lang = 'en', setLang }) {
                         name: f.get('name'),
                         roles: f.getAll('roles'),
                         language: lang,
+                        phone: destination,
                       })
                     )
                   );
@@ -527,6 +529,7 @@ export function LoginForm({ busy, run, onUser, lang = 'en', setLang }) {
                       code: f.get('code'),
                       ...(f.get('name') ? { name: f.get('name'), roles: f.getAll('roles') } : {}),
                       language: lang,
+                      email: destination,
                     })
                   )
                 );
