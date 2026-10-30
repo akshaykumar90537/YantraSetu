@@ -6,7 +6,7 @@ from decimal import Decimal
 from typing import Literal
 from fastapi import FastAPI, HTTPException, Request, Response, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field, AwareDatetime
+from pydantic import BaseModel, Field, AwareDatetime, EmailStr
 from psycopg.errors import ExclusionViolation
 from psycopg.types.json import Jsonb
 from dotenv import load_dotenv
@@ -21,13 +21,14 @@ else:
 from app.db import db, one, many
 from app.domain import bill, meter_quantity, optimize, find_next_available_slot
 from app.sms import provider
+from app.email_auth import email_mode, send_email, verify_google
 
 app=FastAPI(title='YantraSetu',version='0.1.0')
 ORIGIN=os.getenv('FRONTEND_ORIGIN','http://localhost:5173')
 SECRET=os.environ.get('OTP_SECRET','')
 if len(SECRET)<32: raise RuntimeError('Set OTP_SECRET to at least 32 random characters')
 DEV=os.getenv('APP_ENV','development')=='development'
-provider() # fail closed until a live adapter is implemented
+
 app.add_middleware(CORSMiddleware,allow_origins=[ORIGIN],allow_credentials=True,allow_methods=['GET','POST','PATCH'],allow_headers=['Content-Type','X-Requested-With'])
 
 @app.middleware('http')
@@ -53,6 +54,7 @@ def require(condition,message='Forbidden',status=403):
     if not condition: raise HTTPException(status,message)
 def user(request:Request):
     token=request.cookies.get('ys_session','')
+    require(bool(token),'Sign in first',401)
     with db() as c:
         u=one(c,'SELECT u.* FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=%s AND s.expires_at>now()',(digest(token),))
     require(u is not None,'Sign in first',401)
@@ -72,19 +74,29 @@ def audit(c,u,b,action,detail={}):
     c.execute('INSERT INTO audit_log(actor_id,booking_id,action,detail) VALUES(%s,%s,%s,%s)',(u,b,action,Jsonb(detail)))
 def notify(c,u,message):
     c.execute('INSERT INTO notifications(user_id,message) VALUES(%s,%s)',(u,message))
+def contact(u):
+    return u.get('phone') or u.get('email')
+
 def issue(c,phone,purpose,payload):
     throttle(c,'send:'+phone,5,600)
     code=f'{secrets.randbelow(1000000):06}'
     ident=uid()
+    payload={**payload,'development': '@' not in phone or email_mode()=='development'}
     c.execute('INSERT INTO challenges(id,phone,purpose,digest,payload,expires_at) VALUES(%s,%s,%s,%s,%s,now()+interval \'5 minutes\')',(ident,phone,purpose,digest(ident+code),Jsonb(payload)))
-    status=provider().send(phone,f'YantraSetu verification code: {code}')
-    return {'challenge_id':ident,'expires_in':300,**status,**({'development_code':code} if DEV else {})}
+    if '@' in phone:
+        status=send_email(phone,code)
+    else:
+        require(DEV, 'Phone OTP delivery is unavailable; use email sign-in.', 503)
+        status=provider().send(phone,f'YantraSetu verification code: {code}')
+        status['development_code']=code
+    return {'challenge_id':ident,'expires_in':300,**status}
 
 def consume(c,ident,code,purpose,actor=None):
     row=one(c,'SELECT * FROM challenges WHERE id=%s FOR UPDATE',(ident,))
     require(row is not None,'Invalid challenge',400)
     require(row['purpose']==purpose,'Wrong verification purpose',400)
-    if actor: require(row['phone']==actor['phone'],'This code belongs to the farmer who booked')
+    require(DEV or not row['payload'].get('development',False),'Development codes cannot be used in production',400)
+    if actor: require(row['phone']==contact(actor),'This code belongs to the farmer who booked')
     require(row['consumed_at'] is None and row['expires_at']>datetime.now(timezone.utc) and row['attempts']<5,'Code expired or locked',400)
     c.execute('UPDATE challenges SET attempts=attempts+1 WHERE id=%s',(ident,))
     if not hmac.compare_digest(row['digest'],digest(str(ident)+code)):
@@ -103,6 +115,75 @@ class LoginVerify(Verify):
     roles:list[Literal['farmer','owner','operator','fpo']]|None=Field(default=None,min_length=1,max_length=4)
     language:Literal['en','hi','pa']='en'
 
+def establish_session(c,u,response):
+    token=secrets.token_urlsafe(32)
+    c.execute("INSERT INTO sessions VALUES(%s,%s,now()+interval '24 hours')",(digest(token),u['id']))
+    response.set_cookie('ys_session',token,httponly=True,secure=not DEV,samesite='strict',max_age=86400,path='/')
+    return u
+
+class EmailLogin(BaseModel):
+    email:EmailStr=Field(max_length=254)
+class GoogleLogin(BaseModel):
+    credential:str=Field(min_length=20,max_length=10000)
+
+@app.get('/api/auth/config')
+def auth_config():
+    return {'email':email_mode(), 'phone':DEV, 'google_client_id':os.getenv('GOOGLE_CLIENT_ID','') if email_mode()!='disabled' else ''}
+
+@app.post('/api/auth/email/request')
+def email_request(p:EmailLogin,request:Request):
+    require(email_mode()!='disabled','Email sign-in is not configured.',503)
+    with db() as c:
+        throttle(c,'ip:'+request.client.host,20,600)
+        return issue(c,str(p.email).lower(),'email_login',{})
+
+@app.post('/api/auth/google/nonce')
+def google_nonce(request:Request,response:Response):
+    require(bool(os.getenv('GOOGLE_CLIENT_ID')) and email_mode()!='disabled','Google sign-in is not configured.',503)
+    with db() as c:
+        throttle(c,'google-ip:'+request.client.host,20,600)
+    nonce=secrets.token_urlsafe(32)
+    response.set_cookie('ys_google_nonce',nonce,httponly=True,secure=not DEV,samesite='strict',max_age=300,path='/api/auth/google')
+    return {'nonce':nonce}
+
+@app.post('/api/auth/google')
+def google_request(p:GoogleLogin,request:Request,response:Response):
+    nonce=request.cookies.get('ys_google_nonce','')
+    require(bool(nonce),'Restart Google sign-in.',401)
+    with db() as c:
+        throttle(c,'google-verify:'+request.client.host,20,600)
+    claims=verify_google(p.credential)
+    require(hmac.compare_digest(str(claims.get('nonce','')),nonce),'Invalid Google sign-in nonce.',401)
+    email=str(EmailLogin(email=claims['email']).email).lower()
+    with db() as c:
+        # A persisted one-use nonce prevents replay even with a copied cookie.
+        throttle(c,'google-nonce:'+digest(nonce),1,600)
+        result=issue(c,email,'email_login',{'google_sub':claims['sub']})
+    response.delete_cookie('ys_google_nonce',path='/api/auth/google')
+    return {**result,'email':email}
+
+@app.post('/api/auth/email/verify')
+def email_verify(p:LoginVerify,response:Response):
+    with db() as c:
+        row=consume(c,p.challenge_id,p.code,'email_login')
+        email=row['phone'] # Legacy column stores the challenge destination.
+        c.execute('SELECT pg_advisory_xact_lock(hashtextextended(%s,0))',('email:'+email,))
+        sub=row['payload'].get('google_sub')
+        u=one(c,'SELECT * FROM users WHERE lower(email)=%s',(email,))
+        if sub:
+            linked=one(c,'SELECT * FROM users WHERE google_sub=%s',(sub,))
+            require(not linked or (u is not None and linked['id']==u['id']),
+                    'Google account email changed. Sign in with your existing email and contact support.',409)
+            require(not u or not u['google_sub'] or u['google_sub']==sub,'Email belongs to a different Google identity.',409)
+        if not u:
+            require(p.name is not None and len(p.name.strip())>=2,'Your name is required to create an account.',422)
+            u=one(c,'INSERT INTO users(id,email,name,roles,language,email_verified_at,google_sub) VALUES(%s,%s,%s,%s,%s,now(),%s) RETURNING *',
+                  (uid(),email,p.name.strip(),list(set(p.roles or ['farmer'])),p.language,sub))
+        else:
+            # Login never changes existing roles or profile names.
+            u=one(c,'UPDATE users SET email_verified_at=now(),google_sub=COALESCE(google_sub,%s) WHERE id=%s RETURNING *',(sub,u['id']))
+        return establish_session(c,u,response)
+
 @app.get('/api/health')
 def health():
     with db() as c: one(c,'SELECT 1')
@@ -115,12 +196,10 @@ def login(p:Login,request:Request):
         existing = one(c,'SELECT id,name,roles,phone FROM users WHERE phone=%s',(p.phone,))
         res = issue(c,p.phone,'login',{'user_exists': existing is not None})
         res['is_new_user'] = existing is None
-        if existing:
-            res['user_name'] = existing['name']
-            res['user_roles'] = existing['roles']
         return res
 @app.post('/api/auth/verify')
 def verify(p:LoginVerify,response:Response):
+    require(DEV,'Phone login is unavailable; use email sign-in.',503)
     with db() as c:
         row=consume(c,p.challenge_id,p.code,'login')
         u=one(c,'SELECT * FROM users WHERE phone=%s',(row['phone'],))
@@ -130,24 +209,8 @@ def verify(p:LoginVerify,response:Response):
             import uuid
             phone_uuid=str(uuid.uuid5(uuid.NAMESPACE_OID,row['phone']))
             u=one(c,'INSERT INTO users(id,phone,name,roles,language) VALUES(%s,%s,%s,%s,%s) RETURNING *',(phone_uuid,row['phone'],p.name.strip(),assigned_roles,p.language))
-        else:
-            updates,args=[],[]
-            if p.name and p.name.strip() and p.name.strip()!=u['name']:
-                updates.append('name=%s')
-                args.append(p.name.strip())
-            if p.roles:
-                updates.append('roles=%s')
-                args.append(list(set(p.roles)))
-            if p.language and p.language!=u['language']:
-                updates.append('language=%s')
-                args.append(p.language)
-            if updates:
-                args.append(u['id'])
-                u=one(c,f"UPDATE users SET {','.join(updates)} WHERE id=%s RETURNING *",args)
-        token=secrets.token_urlsafe(32)
-        c.execute('INSERT INTO sessions VALUES(%s,%s,now()+interval \'24 hours\')',(digest(token),u['id']))
-    response.set_cookie('ys_session',token,httponly=True,secure=not DEV,samesite='strict',max_age=86400,path='/')
-    return u
+        return establish_session(c,u,response)
+
 @app.get('/api/me')
 def me(u=Depends(user)): return u
 @app.post('/api/auth/logout')
@@ -387,8 +450,8 @@ def meter_request(ident:UUID,p:Reading,u=Depends(user)):
         if p.stage=='end':
             meter_quantity(b['meter_start'],p.reading)
             require(b['unit']!='acre' or p.acres is not None,'Completed acreage required',422)
-        farmer=one(c,'SELECT phone FROM users WHERE id=%s',(b['farmer_id'],))
-        result=issue(c,farmer['phone'],'meter',{'booking_id':str(ident),'stage':p.stage,'reading':str(p.reading),'acres':str(p.acres) if p.acres is not None else None})
+        farmer=one(c,'SELECT phone,email FROM users WHERE id=%s',(b['farmer_id'],))
+        result=issue(c,contact(farmer),'meter',{'booking_id':str(ident),'stage':p.stage,'reading':str(p.reading),'acres':str(p.acres) if p.acres is not None else None})
         audit(c,u['id'],ident,'METER_CONFIRMATION_REQUESTED',{'stage':p.stage,'reading':str(p.reading)})
         return result
 @app.get('/api/bookings/{ident}/meter/pending')
@@ -396,7 +459,7 @@ def pending_meter(ident:UUID,u=Depends(user)):
     with db() as c:
         b=booking_access(c,ident,u)
         require(b['farmer_id']==u['id'])
-        return many(c,"SELECT id,payload,expires_at FROM challenges WHERE phone=%s AND purpose='meter' AND payload->>'booking_id'=%s AND consumed_at IS NULL AND expires_at>now() AND attempts<5 ORDER BY created_at DESC",(u['phone'],str(ident)))
+        return many(c,"SELECT id,payload,expires_at FROM challenges WHERE phone=%s AND purpose='meter' AND payload->>'booking_id'=%s AND consumed_at IS NULL AND expires_at>now() AND attempts<5 ORDER BY created_at DESC",(contact(u),str(ident)))
 @app.post('/api/bookings/{ident}/meter/confirm')
 def meter_confirm(ident:UUID,p:Verify,u=Depends(user)):
     with db() as c:

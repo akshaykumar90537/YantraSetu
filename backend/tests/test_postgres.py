@@ -164,7 +164,7 @@ def test_user_login_does_not_recreate_or_require_registration(database, monkeypa
     r1 = client.post('/api/auth/request', json={'phone': phone})
     assert r1.status_code == 200
     ch1 = r1.json()
-    assert ch1['user_exists'] is False
+    assert ch1['is_new_user'] is True
     assert ch1.get('name') is None
 
     # 2. Register first time
@@ -186,9 +186,9 @@ def test_user_login_does_not_recreate_or_require_registration(database, monkeypa
     r2 = client.post('/api/auth/request', json={'phone': phone})
     assert r2.status_code == 200
     ch2 = r2.json()
-    assert ch2['user_exists'] is True
-    assert ch2['name'] == 'Gurpreet Singh'
-    assert ch2['roles'] == ['farmer']
+    assert ch2['is_new_user'] is False
+    assert 'name' not in ch2 and 'user_name' not in ch2
+    assert 'roles' not in ch2 and 'user_roles' not in ch2
 
     # 4. Login without name or roles (must succeed into existing account)
     v2 = client.post('/api/auth/verify', json={

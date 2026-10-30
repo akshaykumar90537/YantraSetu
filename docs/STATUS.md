@@ -51,3 +51,9 @@ Dockerfiles, Compose and the container-only nginx configuration have been remove
 ## Next verification gate
 
 Start the native local services, run the database-backed test suite, fix any failures, and perform a two-session owner/farmer walkthrough. Until this gate passes, do not present the booking flow as fully verified or the package as hackathon-ready.
+
+## Public landing and email authentication update
+
+Added a public home page and a session gate that prevents mounting the dashboard before server verification. Added email OTP and Google Identity Services sign-in followed by email OTP, PostgreSQL identity migration 003, optional TLS SMTP delivery, expiry/attempt/replay protection, and email meter-code delivery. Existing phone accounts are preserved. Login no longer changes existing profile roles or names.
+
+Validation for this update: 29 local tests passed; 13 PostgreSQL/PostGIS integration tests skipped because the test database is unavailable. Vite production build and git diff whitespace check passed. Desktop home page and direct `/dashboard` navigation inspected in the browser: unauthenticated navigation displayed sign-in, not the workspace. Backend-unavailable error state was visible. Mobile breakpoints are implemented but not browser-verified. Real SMTP delivery and Google account sign-in require owner configuration and were not tested. Native PostgreSQL installation was blocked by execution environment permissions. See AUTH_SETUP.md for activation and limitations.
