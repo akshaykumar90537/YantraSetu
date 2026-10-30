@@ -42,7 +42,13 @@ import './style.css';
 import { AuthGate } from './components/AuthGate';
 
 export function App() {
-  return <AuthGate>{(user, onLogout) => <Workspace key={user.id} initialUser={user} onLogout={onLogout} />}</AuthGate>;
+  return (
+    <AuthGate>
+      {(user, onLogout) => (
+        <Workspace key={user ? user.id : 'guest'} initialUser={user} onLogout={onLogout} />
+      )}
+    </AuthGate>
+  );
 }
 
 function Workspace({ initialUser, onLogout }) {
