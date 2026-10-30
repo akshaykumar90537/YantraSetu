@@ -71,10 +71,8 @@ async def safety_headers(request,call_next):
     if request.method in ('POST','PATCH','DELETE','PUT'):
         req_origin = request.headers.get('origin')
         if request.headers.get('x-requested-with')!='YantraSetu':
-            _ = await request.body()
             return Response('Invalid request header',403)
         if req_origin and not is_origin_allowed(req_origin):
-            _ = await request.body()
             return Response('Invalid request origin',403)
     response=await call_next(request)
     response.headers['X-Content-Type-Options']='nosniff'

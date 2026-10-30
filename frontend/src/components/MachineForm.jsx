@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
-import { Plus, Check, Wrench, Fuel, X, MapPin, Navigation, Loader2 } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Plus, Check, Wrench, Fuel, X, MapPin, Navigation, Loader2, ChevronDown } from 'lucide-react';
 import { FormField } from './Common';
 import { INR, translate } from '../locales';
+import { searchLocalVillages, searchOnlineVillages, findNearestVillage } from '../data/villages';
 
 const PRESET_ATTACHMENTS = [
   { name: 'Rotavator', defaultRate: 250 },
@@ -43,33 +44,91 @@ export function MachineForm({ orgs = [], busy, onSubmit, initialData = null, lan
   const [customAttName, setCustomAttName] = useState('');
   const [customAttRate, setCustomAttRate] = useState('');
 
+  // Dropdown states for interactive village/GPS selection
+  const [villageSuggestions, setVillageSuggestions] = useState([]);
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [highlightedIndex, setHighlightedIndex] = useState(-1);
+  const [isSearchingOnline, setIsSearchingOnline] = useState(false);
+  const villageRef = useRef(null);
+
+  // Close dropdown on click outside
+  useEffect(() => {
+    function handleClickOutside(e) {
+      if (villageRef.current && !villageRef.current.contains(e.target)) {
+        setIsDropdownOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Update suggestions whenever village query changes
+  useEffect(() => {
+    const local = searchLocalVillages(village, 8);
+    setVillageSuggestions(local);
+
+    if (!village || village.trim().length < 2) {
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      setIsSearchingOnline(true);
+      try {
+        const online = await searchOnlineVillages(village, 6);
+        if (online && online.length > 0) {
+          setVillageSuggestions((prev) => {
+            const seen = new Set(prev.map((p) => p.name.toLowerCase()));
+            const filteredOnline = online.filter((o) => !seen.has(o.name.toLowerCase()));
+            return [...prev, ...filteredOnline].slice(0, 10);
+          });
+        }
+      } catch {
+        // Local database continues working
+      } finally {
+        setIsSearchingOnline(false);
+      }
+    }, 350);
+
+    return () => clearTimeout(timer);
+  }, [village]);
+
+  function selectVillage(item) {
+    const formatted = item.label || `${item.name}, ${item.district}, ${item.state}`;
+    setVillage(formatted);
+    const lat = Number(Number(item.lat).toFixed(5));
+    const lon = Number(Number(item.lon).toFixed(5));
+    setLatitude(lat);
+    setLongitude(lon);
+    setGeoNotice(`📍 Exact GPS pinned: ${lat}, ${lon} (${item.name})`);
+    setIsDropdownOpen(false);
+    setHighlightedIndex(-1);
+  }
+
   async function lookupCoordinates(nameToLookup) {
     const query = (nameToLookup || village).trim();
     if (!query) return;
     setIsGeocoding(true);
     setGeoNotice('');
+
+    // 1. Check verified local agricultural villages first
+    const local = searchLocalVillages(query, 5);
+    if (local && local.length > 0) {
+      selectVillage(local[0]);
+      setIsGeocoding(false);
+      return;
+    }
+
+    // 2. Query OpenStreetMap Nominatim for Indian locations
     try {
-      let res = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&countrycodes=in&format=json&limit=1`, {
-        headers: { Accept: 'application/json' },
-      });
-      let data = await res.json();
-      if ((!data || data.length === 0) && !query.toLowerCase().includes('punjab')) {
-        res = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query + ', Punjab')}&countrycodes=in&format=json&limit=1`, {
-          headers: { Accept: 'application/json' },
-        });
-        data = await res.json();
-      }
-      if (data && data.length > 0) {
-        const lat = Number(Number(data[0].lat).toFixed(5));
-        const lon = Number(Number(data[0].lon).toFixed(5));
-        setLatitude(lat);
-        setLongitude(lon);
-        setGeoNotice(`📍 GPS auto-set: ${lat}, ${lon} (${data[0].name || query})`);
+      const online = await searchOnlineVillages(query, 3);
+      if (online && online.length > 0) {
+        selectVillage(online[0]);
       } else {
-        setGeoNotice('Could not find GPS for this location. You can enter coordinates below or use GPS button.');
+        setGeoNotice(`Could not auto-locate "${query}". Please pick from the dropdown list or use "Use My Current GPS".`);
+        setIsDropdownOpen(true);
       }
     } catch {
-      setGeoNotice('Location lookup unavailable. You can adjust latitude/longitude below.');
+      setGeoNotice('Location lookup unavailable. You can adjust latitude/longitude below or choose from list.');
     } finally {
       setIsGeocoding(false);
     }
@@ -87,7 +146,17 @@ export function MachineForm({ orgs = [], busy, onSubmit, initialData = null, lan
         const lon = Number(pos.coords.longitude.toFixed(5));
         setLatitude(lat);
         setLongitude(lon);
-        setGeoNotice(`📍 Current device GPS set: ${lat}, ${lon}`);
+
+        // Find nearest known agricultural village
+        const nearest = findNearestVillage(lat, lon, 40);
+        if (nearest) {
+          if (!village.trim()) {
+            setVillage(nearest.label);
+          }
+          setGeoNotice(`📍 Device GPS set: ${lat}, ${lon} (~${nearest.distanceKm} km from ${nearest.name})`);
+        } else {
+          setGeoNotice(`📍 Device GPS set: ${lat}, ${lon}`);
+        }
         setIsGeocoding(false);
       },
       (err) => {
@@ -208,20 +277,182 @@ export function MachineForm({ orgs = [], busy, onSubmit, initialData = null, lan
             </select>
           </FormField>
           <FormField label={t('villageLabel')}>
-            <input
-              name="village"
-              minLength="2"
-              maxLength="100"
-              value={village}
-              onChange={(e) => setVillage(e.target.value)}
-              onBlur={() => {
-                if (village.trim() && (!initialData || village.trim() !== initialData.village)) {
-                  lookupCoordinates(village);
-                }
-              }}
-              required
-              placeholder="e.g. Gharuan, Mohali or Khanna, Ludhiana"
-            />
+            <div ref={villageRef} style={{ position: 'relative', width: '100%' }}>
+              <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                <input
+                  name="village"
+                  minLength="2"
+                  maxLength="100"
+                  value={village}
+                  autoComplete="off"
+                  onChange={(e) => {
+                    setVillage(e.target.value);
+                    setIsDropdownOpen(true);
+                    setHighlightedIndex(-1);
+                  }}
+                  onFocus={() => {
+                    setIsDropdownOpen(true);
+                  }}
+                  onKeyDown={(e) => {
+                    if (!isDropdownOpen || villageSuggestions.length === 0) return;
+                    if (e.key === 'ArrowDown') {
+                      e.preventDefault();
+                      setHighlightedIndex((prev) => (prev + 1) % villageSuggestions.length);
+                    } else if (e.key === 'ArrowUp') {
+                      e.preventDefault();
+                      setHighlightedIndex((prev) => (prev - 1 + villageSuggestions.length) % villageSuggestions.length);
+                    } else if (e.key === 'Enter') {
+                      if (highlightedIndex >= 0 && highlightedIndex < villageSuggestions.length) {
+                        e.preventDefault();
+                        selectVillage(villageSuggestions[highlightedIndex]);
+                      }
+                    } else if (e.key === 'Escape') {
+                      setIsDropdownOpen(false);
+                    }
+                  }}
+                  required
+                  placeholder="e.g. Gharuan, Khanna, Ludhiana, Samrala..."
+                  style={{ width: '100%', paddingRight: village ? '58px' : '32px' }}
+                />
+                <div style={{ position: 'absolute', right: '8px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  {village && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setVillage('');
+                        setIsDropdownOpen(true);
+                        setGeoNotice('');
+                      }}
+                      style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: '3px', color: '#94a3b8', display: 'flex' }}
+                      title="Clear village"
+                    >
+                      <X size={14} />
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setIsDropdownOpen((prev) => !prev)}
+                    style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: '3px', color: '#64748b', display: 'flex' }}
+                    title="Toggle village suggestions"
+                  >
+                    <ChevronDown size={14} />
+                  </button>
+                </div>
+              </div>
+
+              {/* Autocomplete Dropdown List */}
+              {isDropdownOpen && (
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: 'calc(100% + 4px)',
+                    left: 0,
+                    right: 0,
+                    maxHeight: '260px',
+                    overflowY: 'auto',
+                    backgroundColor: '#ffffff',
+                    border: '1px solid #cbd5e1',
+                    borderRadius: '8px',
+                    boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.15), 0 8px 10px -6px rgba(0, 0, 0, 0.1)',
+                    zIndex: 200,
+                  }}
+                >
+                  <div
+                    style={{
+                      padding: '6px 12px',
+                      background: '#f8fafc',
+                      borderBottom: '1px solid #e2e8f0',
+                      fontSize: '11px',
+                      fontWeight: 600,
+                      color: '#475569',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                    }}
+                  >
+                    <span>
+                      {village.trim()
+                        ? `Matching Locations (${villageSuggestions.length})`
+                        : 'Select or Search Village / Mandi'}
+                    </span>
+                    {isSearchingOnline && (
+                      <span style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#16a34a', fontSize: '10px' }}>
+                        <Loader2 size={10} className="spin" /> Searching...
+                      </span>
+                    )}
+                  </div>
+
+                  {villageSuggestions.length === 0 ? (
+                    <div style={{ padding: '12px', textAlign: 'center', fontSize: '12px', color: '#64748b' }}>
+                      {isSearchingOnline ? 'Searching location databases...' : 'No matching villages found. Try typing district or nearby town.'}
+                    </div>
+                  ) : (
+                    villageSuggestions.map((item, idx) => {
+                      const isHighlighted = idx === highlightedIndex;
+                      return (
+                        <div
+                          key={`${item.name}-${item.lat}-${item.lon}-${idx}`}
+                          onClick={() => selectVillage(item)}
+                          onMouseEnter={() => setHighlightedIndex(idx)}
+                          style={{
+                            padding: '9px 12px',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            borderBottom: '1px solid #f1f5f9',
+                            backgroundColor: isHighlighted ? '#f0fdf4' : '#ffffff',
+                            transition: 'background 0.12s ease',
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+                            <MapPin size={14} style={{ color: item.source === 'verified' ? '#16a34a' : '#0284c7', flexShrink: 0 }} />
+                            <div style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                              <div style={{ fontSize: '13px', fontWeight: 600, color: '#0f172a' }}>
+                                {item.name}
+                                {item.source === 'verified' && (
+                                  <span
+                                    style={{
+                                      marginLeft: '6px',
+                                      fontSize: '9px',
+                                      background: '#dcfce7',
+                                      color: '#166534',
+                                      padding: '1px 5px',
+                                      borderRadius: '4px',
+                                      fontWeight: 500,
+                                    }}
+                                  >
+                                    Verified
+                                  </span>
+                                )}
+                              </div>
+                              <div style={{ fontSize: '11px', color: '#64748b' }}>
+                                {[item.district, item.state].filter(Boolean).join(', ')}
+                              </div>
+                            </div>
+                          </div>
+                          <span
+                            style={{
+                              fontSize: '10px',
+                              fontFamily: 'monospace',
+                              backgroundColor: '#f1f5f9',
+                              color: '#334155',
+                              padding: '2px 6px',
+                              borderRadius: '4px',
+                              flexShrink: 0,
+                              marginLeft: '8px',
+                            }}
+                          >
+                            {item.lat.toFixed(4)}, {item.lon.toFixed(4)}
+                          </span>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              )}
+            </div>
+
             <div style={{ display: 'flex', gap: '8px', marginTop: '6px', flexWrap: 'wrap' }}>
               <button
                 type="button"

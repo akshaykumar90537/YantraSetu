@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { MapPicker } from './MapPicker';
 import { translate } from '../locales';
+import { searchLocalVillages, searchOnlineVillages } from '../data/villages';
 
 function getWeatherInfo(code) {
   if (code === 0) {
@@ -97,15 +98,24 @@ export function WeatherDashboard({ latitude = 30.901, longitude = 75.857, onSele
     setSearchingVillage(true);
     setSearchError('');
 
+    // 1. Check verified local agricultural villages first
+    const local = searchLocalVillages(query, 1);
+    if (local && local.length > 0) {
+      const match = local[0];
+      setActiveLocationName(match.label);
+      if (onSelectLocation) {
+        onSelectLocation(Number(match.lat).toFixed(5), Number(match.lon).toFixed(5));
+      }
+      setSearchingVillage(false);
+      return;
+    }
+
+    // 2. Fallback to online OpenStreetMap search
     try {
-      const res = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&countrycodes=in&format=json&limit=1`, {
-        headers: { Accept: 'application/json' },
-      });
-      const items = await res.json();
-      if (items && items.length > 0) {
-        const item = items[0];
-        const displayName = item.display_name ? item.display_name.split(',').slice(0, 3).join(',') : (item.name || query);
-        setActiveLocationName(displayName);
+      const online = await searchOnlineVillages(query, 1);
+      if (online && online.length > 0) {
+        const item = online[0];
+        setActiveLocationName(item.label);
         if (onSelectLocation) {
           onSelectLocation(Number(item.lat).toFixed(5), Number(item.lon).toFixed(5));
         }
