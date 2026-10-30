@@ -1,0 +1,13 @@
+
+> yantrasetu-web@0.1.0 build
+> vite build
+
+vite v6.4.5 building for production...
+transforming...
+✓ 1573 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                   0.58 kB │ gzip:  0.38 kB
+dist/assets/index-CA_NenSN.css   17.45 kB │ gzip:  4.62 kB
+dist/assets/index-CHL4nY4i.js   273.27 kB │ gzip: 83.01 kB
+✓ built in 1.94s

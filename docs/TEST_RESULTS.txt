@@ -1,0 +1,14 @@
+============================= test session starts =============================
+platform win32 -- Python 3.11.9, pytest-9.2.0, pluggy-1.6.0
+rootdir: D:\HACKATHON\YantraSetu\backend
+configfile: pytest.ini
+plugins: anyio-4.9.0, typeguard-4.4.4
+collected 26 items
+
+tests\test_api_validation.py ......                                      [ 23%]
+tests\test_domain.py ..............                                      [ 76%]
+tests\test_postgres.py ......                                            [100%]
+
+============================== warnings summary ===============================
+fastapi\testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+======================== 26 passed, 1 warning in 6.26s =========================
