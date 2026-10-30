@@ -235,6 +235,8 @@ export const hi = {
   weatherHeadline: 'खेत का मौसम और कृषि मशीनरी सलाह',
   weatherSub: 'पंजाब और उत्तर भारत के लिए सटीक मौसम पूर्वानुमान। ट्रैक्टर, जुताई, छिड़काव और कटाई का सुरक्षित नियोजन करें।',
   changeFarmLocation: 'खेत का स्थान बदलें',
+  searchVillagePlaceholder: 'गाँव, कस्बा या पिन कोड खोजें (जैसे खन्ना, समराला, करनाल)…',
+  findVillageBtn: 'गाँव खोजें',
   machinerySuitabilityTitle: 'मशीनरी अनुकूलता और खेत सलाह',
   tillagePloughing: 'जुताई और मिट्टी की तैयारी (रोटावेटर / कल्टीवेटर)',
   harvesting: 'फसल कटाई (कंबाइन हार्वेस्टर / थ्रेशर)',

@@ -235,6 +235,8 @@ export const en = {
   weatherHeadline: 'Field Weather & Agricultural Advisory',
   weatherSub: 'Real-time meteorological forecasts for Punjab and North India. Plan tractor, tillage, spraying, and harvesting work safely.',
   changeFarmLocation: 'Change Farm Location',
+  searchVillagePlaceholder: 'Search village, town, or pin code (e.g. Khanna, Samrala, Karnal)…',
+  findVillageBtn: 'Find Village',
   machinerySuitabilityTitle: 'Machinery Suitability & Field Advisory',
   tillagePloughing: 'Tillage & Soil Prep (Rotavator / Cultivator)',
   harvesting: 'Harvesting (Combine Harvester / Thresher)',

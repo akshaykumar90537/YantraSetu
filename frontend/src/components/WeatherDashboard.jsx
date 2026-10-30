@@ -16,6 +16,9 @@ import {
   Clock,
   Sparkles,
   Tractor,
+  Search as SearchIcon,
+  X,
+  Loader2,
 } from 'lucide-react';
 import { MapPicker } from './MapPicker';
 import { translate } from '../locales';
@@ -48,6 +51,12 @@ export function WeatherDashboard({ latitude = 30.901, longitude = 75.857, onSele
   const [loading, setLoading] = useState(false);
   const [showMap, setShowMap] = useState(false);
 
+  // Village search states
+  const [villageSearch, setVillageSearch] = useState('');
+  const [searchingVillage, setSearchingVillage] = useState(false);
+  const [searchError, setSearchError] = useState('');
+  const [activeLocationName, setActiveLocationName] = useState('');
+
   const latNum = Number(latitude) || 30.901;
   const lonNum = Number(longitude) || 75.857;
 
@@ -79,6 +88,44 @@ export function WeatherDashboard({ latitude = 30.901, longitude = 75.857, onSele
   useEffect(() => {
     fetchForecast();
   }, [latNum, lonNum]);
+
+  async function handleSearchVillage(e) {
+    if (e) e.preventDefault();
+    const query = villageSearch.trim();
+    if (!query) return;
+
+    setSearchingVillage(true);
+    setSearchError('');
+
+    try {
+      const res = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&countrycodes=in&format=json&limit=1`, {
+        headers: { Accept: 'application/json' },
+      });
+      const items = await res.json();
+      if (items && items.length > 0) {
+        const item = items[0];
+        const displayName = item.display_name ? item.display_name.split(',').slice(0, 3).join(',') : (item.name || query);
+        setActiveLocationName(displayName);
+        if (onSelectLocation) {
+          onSelectLocation(Number(item.lat).toFixed(5), Number(item.lon).toFixed(5));
+        }
+      } else {
+        setSearchError(`Could not find "${query}". Try adding district or state (e.g. "${query}, Punjab").`);
+      }
+    } catch {
+      setSearchError('Search service temporarily unavailable.');
+    } finally {
+      setSearchingVillage(false);
+    }
+  }
+
+  function handleSelectHub(hub) {
+    setActiveLocationName(hub.name + ', Punjab');
+    setSearchError('');
+    if (onSelectLocation) {
+      onSelectLocation(hub.lat, hub.lon);
+    }
+  }
 
   if (!data || !data.current) {
     return (
@@ -136,66 +183,137 @@ export function WeatherDashboard({ latitude = 30.901, longitude = 75.857, onSele
         </button>
       </div>
 
-      {/* Location Control Bar */}
+      {/* Village Search & Location Control Bar */}
       <div style={{
         background: '#fff',
         border: '1px solid #dce4d5',
         borderRadius: '12px',
-        padding: '12px 18px',
+        padding: '16px 20px',
         display: 'flex',
-        flexWrap: 'wrap',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        gap: '12px',
+        flexDirection: 'column',
+        gap: '14px',
         marginBottom: '20px',
         boxShadow: '0 2px 8px rgba(0,0,0,0.03)',
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <div style={{ background: '#eaf2e3', color: '#275235', padding: '6px', borderRadius: '8px' }}>
-            <MapPin size={18} />
-          </div>
-          <div>
-            <span style={{ fontSize: '11px', color: '#64748b', fontWeight: '600', textTransform: 'uppercase' }}>
-              Active Farm Coordinates
-            </span>
-            <div style={{ fontSize: '14px', fontWeight: '700', color: '#1e293b' }}>
-              {latNum.toFixed(4)}° N, {lonNum.toFixed(4)}° E
+        
+        {/* Top Row: Search Form + Coordinates Display */}
+        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
+          
+          {/* Village / Location Search Input */}
+          <form onSubmit={handleSearchVillage} style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: '1 1 320px', maxWidth: '520px' }}>
+            <div style={{ position: 'relative', width: '100%' }}>
+              <input
+                type="text"
+                placeholder={t('searchVillagePlaceholder')}
+                value={villageSearch}
+                onChange={(e) => setVillageSearch(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '9px 34px 9px 12px',
+                  borderRadius: '8px',
+                  border: '1.5px solid #cbd5e1',
+                  fontSize: '13px',
+                  outline: 'none',
+                }}
+              />
+              {villageSearch && (
+                <button
+                  type="button"
+                  onClick={() => setVillageSearch('')}
+                  style={{
+                    position: 'absolute',
+                    right: '10px',
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    background: 'none',
+                    border: 'none',
+                    cursor: 'pointer',
+                    color: '#94a3b8',
+                  }}
+                >
+                  <X size={15} />
+                </button>
+              )}
+            </div>
+
+            <button
+              type="submit"
+              disabled={searchingVillage || !villageSearch.trim()}
+              className="primary"
+              style={{
+                padding: '9px 16px',
+                minHeight: '38px',
+                borderRadius: '8px',
+                fontSize: '12px',
+                fontWeight: '600',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {searchingVillage ? <Loader2 size={15} className="animate-spin" /> : <SearchIcon size={15} />}
+              <span>{searchingVillage ? 'Searching…' : t('findVillageBtn')}</span>
+            </button>
+          </form>
+
+          {/* Active Location Coordinates Badge */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#f8fafc', padding: '8px 14px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+            <MapPin size={18} color="#166534" />
+            <div>
+              <span style={{ fontSize: '10px', color: '#64748b', fontWeight: '700', textTransform: 'uppercase', display: 'block' }}>
+                Forecast Location
+              </span>
+              <div style={{ fontSize: '13px', fontWeight: '700', color: '#1e293b' }}>
+                {activeLocationName || `${latNum.toFixed(4)}° N, ${lonNum.toFixed(4)}° E`}
+              </div>
             </div>
           </div>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-          <span style={{ fontSize: '12px', color: '#64748b', fontWeight: '500' }}>Agricultural Hubs:</span>
-          {quickHubs.map((hub) => (
-            <button
-              key={hub.name}
-              type="button"
-              onClick={() => {
-                if (onSelectLocation) onSelectLocation(hub.lat, hub.lon);
-              }}
-              style={{
-                background: Math.abs(latNum - hub.lat) < 0.05 ? '#275235' : '#f1f5ee',
-                color: Math.abs(latNum - hub.lat) < 0.05 ? '#fff' : '#2b4432',
-                border: '1px solid #dce4d5',
-                borderRadius: '16px',
-                padding: '4px 10px',
-                fontSize: '11px',
-                fontWeight: '600',
-                cursor: 'pointer',
-              }}
-            >
-              {hub.name}
-            </button>
-          ))}
+        {/* Search Error Notice if any */}
+        {searchError && (
+          <div style={{ fontSize: '12px', color: '#b91c1c', background: '#fee2e2', padding: '6px 12px', borderRadius: '6px' }}>
+            ⚠️ {searchError}
+          </div>
+        )}
+
+        {/* Bottom Row: Quick Agricultural Hubs + Map Pin Toggle */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px', paddingTop: '10px', borderTop: '1px solid #f1f5ee' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: '11px', color: '#64748b', fontWeight: '600' }}>Quick Hubs:</span>
+            {quickHubs.map((hub) => (
+              <button
+                key={hub.name}
+                type="button"
+                onClick={() => handleSelectHub(hub)}
+                style={{
+                  background: Math.abs(latNum - hub.lat) < 0.05 ? '#275235' : '#f1f5ee',
+                  color: Math.abs(latNum - hub.lat) < 0.05 ? '#fff' : '#2b4432',
+                  border: '1px solid #dce4d5',
+                  borderRadius: '16px',
+                  padding: '3px 10px',
+                  fontSize: '11px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                }}
+              >
+                {hub.name}
+              </button>
+            ))}
+          </div>
+
           <button
             type="button"
             className="outline"
             onClick={() => setShowMap(!showMap)}
-            style={{ fontSize: '11px', padding: '4px 10px', height: 'auto', minHeight: 'unset' }}
+            style={{ fontSize: '11px', padding: '5px 12px', height: 'auto', minHeight: 'unset', display: 'flex', alignItems: 'center', gap: '4px' }}
           >
-            {showMap ? 'Hide Map' : '📍 ' + t('changeFarmLocation')}
+            <MapPin size={13} />
+            <span>{showMap ? 'Hide Map' : t('changeFarmLocation')}</span>
           </button>
         </div>
+
       </div>
 
       {/* Collapsible Pin-Drop Map */}
@@ -208,6 +326,7 @@ export function WeatherDashboard({ latitude = 30.901, longitude = 75.857, onSele
             interactive={true}
             showLocate={true}
             onSelectLocation={(newLat, newLon) => {
+              setActiveLocationName('');
               if (onSelectLocation) onSelectLocation(newLat, newLon);
             }}
             lang={lang}
@@ -571,4 +690,3 @@ export function WeatherDashboard({ latitude = 30.901, longitude = 75.857, onSele
     </div>
   );
 }
-

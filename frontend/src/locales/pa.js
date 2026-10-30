@@ -235,6 +235,8 @@ export const pa = {
   weatherHeadline: 'ਖੇਤ ਦਾ ਮੌਸਮ ਅਤੇ ਖੇਤੀਬਾੜੀ ਸਲਾਹ',
   weatherSub: 'ਪੰਜਾਬ ਅਤੇ ਉੱਤਰੀ ਭਾਰਤ ਲਈ ਸਟੀਕ ਮੌਸਮ ਅਨੁਮਾਨ। ਟਰੈਕਟਰ, ਵਹਾਈ, ਸਪਰੇਅ ਅਤੇ ਵਾਢੀ ਦਾ ਸਹੀ ਪ੍ਰਬੰਧ ਕਰੋ।',
   changeFarmLocation: 'ਖੇਤ ਦੀ ਥਾਂ ਬਦਲੋ',
+  searchVillagePlaceholder: 'ਪਿੰਡ, ਕਸਬਾ ਜਾਂ ਪਿੰਨ ਕੋਡ ਖੋਜੋ (ਜਿਵੇਂ ਖੰਨਾ, ਸਮਰਾਲਾ, ਕਰਨਾਲ)…',
+  findVillageBtn: 'ਪਿੰਡ ਖੋਜੋ',
   machinerySuitabilityTitle: 'ਮਸ਼ੀਨਰੀ ਅਨੁਕੂਲਤਾ ਅਤੇ ਖੇਤ ਸਲਾਹ',
   tillagePloughing: 'ਜ਼ਮੀਨ ਦੀ ਤਿਆਰੀ ਅਤੇ ਵਹਾਈ (ਰੋਟਾਵੇਟਰ / ਕਲਟੀਵੇਟਰ)',
   harvesting: 'ਵਾਢੀ (ਕੰਬਾਈਨ ਹਾਰਵੈਸਟਰ / ਥਰੈਸ਼ਰ)',
