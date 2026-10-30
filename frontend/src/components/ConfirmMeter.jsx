@@ -38,12 +38,13 @@ export function ConfirmMeter({ booking: b, run, busy, done, lang = 'en' }) {
           {p.payload.acres && (
             <p>{t('completedAcreageLabel', { acres: p.payload.acres })}</p>
           )}
-          <FormField label={t('devOtpFromTest')}>
+          <FormField label="Verification code">
             <input
               name="code"
               pattern="[0-9]{6}"
               required
               inputMode="numeric"
+              autoComplete="one-time-code"
               maxLength="6"
             />
           </FormField>
