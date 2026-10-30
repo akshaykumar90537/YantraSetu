@@ -194,21 +194,42 @@ export const en = {
 
   // Rating & Maintenance
   rateCompletedTitle: 'Rate your completed booking',
-  ratingLabel: 'Rating',
-  yourExperienceLabel: 'Your experience',
-  saveRatingBtn: 'Save rating',
+  ratingLabel: 'Overall Rating',
+  punctualityScore: 'Operator Punctuality',
+  conditionBadges: 'Equipment & Service Badges',
+  badgeCleanMachine: 'Clean Machine',
+  badgeExperiencedDriver: 'Experienced Driver',
+  badgeFullTank: 'Full Tank',
+  badgeOnTime: 'On-Time Arrival',
+  badgeFairBilling: 'Fair Billing',
+  yourExperienceLabel: 'Your feedback / notes',
+  saveRatingBtn: 'Submit Review & Rating',
   blockTimeTitle: 'Block time for maintenance',
   reasonLabel: 'Reason',
   saveBlockBtn: 'Save block',
   assignOperatorTitle: 'Assign a registered operator',
   operatorPhoneLabel: 'Operator phone · +91',
 
+  // Attachments & Fuel
+  attachmentsLabel: 'Implement Attachments',
+  selectAttachments: 'Select Attachments',
+  noAttachmentsOffered: 'Standard implement only',
+  fuelOptionLabel: 'Fuel (Diesel) Policy',
+  dieselIncluded: 'Diesel included in base rate',
+  dieselAvailableExtra: 'Diesel available at extra charge',
+  includeDieselToggle: 'Include Diesel',
+  fuelOptionNotice: 'Diesel supplied by machine owner',
+  itemizedBaseRental: 'Base Machine Rental',
+  itemizedAttachments: 'Implement Attachments',
+  itemizedFuel: 'Fuel (Diesel) Add-on',
+  complianceDisclaimer: 'Self-reported outside-platform payment. YantraSetu operates purely as a peer-to-peer equipment sharing platform and does not collect payments or charge escrow fees.',
+
   // Invoice
-  rentalBillTitle: 'YANTRASETU · RENTAL BILL',
+  rentalBillTitle: 'YANTRASETU · OFFICIAL RENTAL INVOICE',
   confirmedQuantityLabel: 'Confirmed quantity',
   rentalSubtotal: 'Rental',
   finalTotalLabel: 'Total',
-  printPdfBtn: 'Print / save as PDF',
+  printPdfBtn: 'Print / Save Invoice as PDF',
 
   // Footer
   footerTagline: 'YantraSetu · Don’t buy what your village can share.',

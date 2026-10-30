@@ -18,8 +18,9 @@ def database():
         c.execute('CREATE EXTENSION IF NOT EXISTS btree_gist')
         c.execute(f'CREATE SCHEMA {schema}')
         c.execute(f'SET search_path TO {schema},public')
-        migration=Path(os.getenv('MIGRATIONS_DIR',str(Path(__file__).parents[2]/'db')))/'001_initial.sql'
-        c.execute(migration.read_text())
+        migrations_dir = Path(os.getenv('MIGRATIONS_DIR', str(Path(__file__).parents[2] / 'db')))
+        for sql_file in sorted(migrations_dir.glob('*.sql')):
+            c.execute(sql_file.read_text(encoding='utf-8'))
     def connect():
         c=psycopg.connect(DSN)
         c.execute(f'SET search_path TO {schema},public')

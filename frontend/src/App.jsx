@@ -32,6 +32,7 @@ import { MeterForm } from './components/MeterForm';
 import { ConfirmMeter } from './components/ConfirmMeter';
 import { Invoice } from './components/Invoice';
 import { MapPicker } from './components/MapPicker';
+import { RatingModal } from './components/RatingModal';
 import './style.css';
 
 export function App() {
@@ -1067,37 +1068,16 @@ export function App() {
             )}
 
             {modal.type === 'rating' && (
-              <>
-                <h2>{t('rateCompletedTitle')}</h2>
-                <form
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    const f = new FormData(e.target);
-                    run(async () => {
-                      await api('/bookings/' + modal.b.id + '/rating', {
-                        score: Number(f.get('score')),
-                        comment: f.get('comment'),
-                      });
-                      setModal(null);
-                      setNotice('Your rating was saved.');
-                    });
-                  }}
-                >
-                  <FormField label={t('ratingLabel')}>
-                    <select name="score">
-                      {[5, 4, 3, 2, 1].map((n) => (
-                        <option key={n} value={n}>
-                          {n}
-                        </option>
-                      ))}
-                    </select>
-                  </FormField>
-                  <FormField label={t('yourExperienceLabel')}>
-                    <textarea name="comment" maxLength="500" />
-                  </FormField>
-                  <button className="primary">{t('saveRatingBtn')}</button>
-                </form>
-              </>
+              <RatingModal
+                booking={modal.b}
+                lang={lang}
+                onSubmitDone={async (msg) => {
+                  await load();
+                  await search();
+                  setModal(null);
+                  setNotice(msg);
+                }}
+              />
             )}
 
             {modal.type === 'invoice' && <Invoice data={modal.data} lang={lang} />}

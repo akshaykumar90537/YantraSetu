@@ -9,12 +9,14 @@ TRANSITIONS = {'approve': ('PENDING', 'APPROVED'), 'reject': ('PENDING','REJECTE
 def money(value):
     return Decimal(str(value)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
 
-def bill(rate, quantity, mobilization):
-    r, q, m = map(lambda x: Decimal(str(x)), (rate,quantity,mobilization))
-    if not all(x.is_finite() for x in (r,q,m)) or r <= 0 or q <= 0 or m < 0:
+def bill(rate, quantity, mobilization, addons_rate=0):
+    r, q, m, a = map(lambda x: Decimal(str(x)), (rate, quantity, mobilization, addons_rate))
+    if not all(x.is_finite() for x in (r, q, m, a)) or r <= 0 or q <= 0 or m < 0 or a < 0:
         raise ValueError('Invalid price or quantity')
-    rental = money(r*q)
-    return {'rental': rental, 'mobilization': money(m), 'total': money(rental+m)}
+    base_rental = money(r * q)
+    addons = money(a * q)
+    rental = money((r + a) * q)
+    return {'rental': rental, 'base_rental': base_rental, 'addons': addons, 'mobilization': money(m), 'total': money(rental + m)}
 
 def meter_quantity(start, end):
     result = Decimal(str(end))-Decimal(str(start))

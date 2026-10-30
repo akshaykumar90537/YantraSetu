@@ -120,6 +120,10 @@ def logout(request:Request,response:Response):
     response.delete_cookie('ys_session',path='/')
     return {'ok':True}
 
+class Attachment(BaseModel):
+    name:str=Field(min_length=2,max_length=50)
+    rate:Decimal=Field(ge=0,le=50000,max_digits=12,decimal_places=2)
+
 class Machine(BaseModel):
     name:str=Field(min_length=3,max_length=100)
     category:str=Field(min_length=2,max_length=50)
@@ -132,8 +136,15 @@ class Machine(BaseModel):
     mobilization:Decimal=Field(default=0,ge=0,le=100000,max_digits=12,decimal_places=2)
     buffer_minutes:int=Field(default=15,ge=0,le=180)
     organization_id:UUID|None=None
+    attachments:list[Attachment]=Field(default=[])
+    fuel_included:bool=Field(default=False)
+    fuel_rate_extra:Decimal=Field(default=0,ge=0,le=50000,max_digits=12,decimal_places=2)
 
-MACHINE_SELECT='''SELECT m.id,m.owner_id,m.organization_id,m.name,m.category,m.description,m.village,m.rate,m.unit,m.mobilization,m.buffer_minutes,m.active,u.name AS owner_name,ST_Y(m.location::geometry) AS latitude,ST_X(m.location::geometry) AS longitude FROM machines m JOIN users u ON u.id=m.owner_id'''
+MACHINE_SELECT='''SELECT m.id,m.owner_id,m.organization_id,m.name,m.category,m.description,m.village,m.rate,m.unit,m.mobilization,m.buffer_minutes,m.active,COALESCE(m.attachments, '[]'::jsonb) AS attachments,COALESCE(m.fuel_included, false) AS fuel_included,COALESCE(m.fuel_rate_extra, 0) AS fuel_rate_extra,u.name AS owner_name,u.phone AS owner_phone,ST_Y(m.location::geometry) AS latitude,ST_X(m.location::geometry) AS longitude,
+COALESCE((SELECT ROUND(AVG(r.score)::numeric, 1) FROM ratings r JOIN bookings b ON b.id=r.booking_id WHERE b.machine_id=m.id), 0) AS rating_avg,
+COALESCE((SELECT COUNT(*) FROM ratings r JOIN bookings b ON b.id=r.booking_id WHERE b.machine_id=m.id), 0) AS rating_count,
+COALESCE((SELECT array_agg(DISTINCT badge) FROM ratings r JOIN bookings b ON b.id=r.booking_id, unnest(r.badges) AS badge WHERE b.machine_id=m.id), ARRAY[]::text[]) AS badges
+FROM machines m JOIN users u ON u.id=m.owner_id'''
 @app.post('/api/machines')
 def create_machine(p:Machine,u=Depends(user)):
     require('owner' in u['roles'],'Owner role required')
@@ -141,7 +152,8 @@ def create_machine(p:Machine,u=Depends(user)):
         if p.organization_id:
             require(one(c,'SELECT id FROM organizations WHERE id=%s AND manager_id=%s',(p.organization_id,u['id'])) is not None)
         ident=uid()
-        c.execute('INSERT INTO machines(id,owner_id,organization_id,name,category,description,village,location,rate,unit,mobilization,buffer_minutes) VALUES(%s,%s,%s,%s,%s,%s,%s,ST_SetSRID(ST_MakePoint(%s,%s),4326)::geography,%s,%s,%s,%s)',(ident,u['id'],p.organization_id,p.name,p.category,p.description,p.village,p.longitude,p.latitude,p.rate,p.unit,p.mobilization,p.buffer_minutes))
+        att_json=Jsonb([a.model_dump(mode='json') for a in p.attachments])
+        c.execute('INSERT INTO machines(id,owner_id,organization_id,name,category,description,village,location,rate,unit,mobilization,buffer_minutes,attachments,fuel_included,fuel_rate_extra) VALUES(%s,%s,%s,%s,%s,%s,%s,ST_SetSRID(ST_MakePoint(%s,%s),4326)::geography,%s,%s,%s,%s,%s,%s,%s)',(ident,u['id'],p.organization_id,p.name,p.category,p.description,p.village,p.longitude,p.latitude,p.rate,p.unit,p.mobilization,p.buffer_minutes,att_json,p.fuel_included,p.fuel_rate_extra))
         return one(c,MACHINE_SELECT+' WHERE m.id=%s',(ident,))
 
 class MachineUpdate(BaseModel):
@@ -157,6 +169,9 @@ class MachineUpdate(BaseModel):
     buffer_minutes:int|None=Field(default=None,ge=0,le=180)
     active:bool|None=None
     organization_id:UUID|None=None
+    attachments:list[Attachment]|None=None
+    fuel_included:bool|None=None
+    fuel_rate_extra:Decimal|None=Field(default=None,ge=0,le=50000,max_digits=12,decimal_places=2)
 
 @app.patch('/api/machines/{ident}')
 def update_machine(ident:UUID,p:MachineUpdate,u=Depends(user)):
@@ -167,7 +182,10 @@ def update_machine(ident:UUID,p:MachineUpdate,u=Depends(user)):
         if p.organization_id is not None:
             require(one(c,'SELECT id FROM organizations WHERE id=%s AND manager_id=%s',(p.organization_id,u['id'])) is not None)
         updates,args=[],[]
-        fields=['name','category','description','village','rate','unit','mobilization','buffer_minutes','active','organization_id']
+        fields=['name','category','description','village','rate','unit','mobilization','buffer_minutes','active','organization_id','fuel_included','fuel_rate_extra']
+        if p.attachments is not None:
+            updates.append('attachments=%s')
+            args.append(Jsonb([a.model_dump(mode='json') for a in p.attachments]))
         for field in fields:
             val=getattr(p,field)
             if val is not None:
@@ -214,6 +232,10 @@ def block(ident:UUID,p:Block,u=Depends(user)):
         c.execute('INSERT INTO maintenance VALUES(%s,%s,%s,%s,%s)',(uid(),ident,p.start_at,p.end_at,p.reason))
     return {'ok':True}
 
+class SelectedAttachment(BaseModel):
+    name:str=Field(min_length=2,max_length=50)
+    rate:Decimal=Field(ge=0,le=50000,max_digits=12,decimal_places=2)
+
 class Booking(BaseModel):
     machine_id:UUID
     start_at:AwareDatetime
@@ -222,19 +244,30 @@ class Booking(BaseModel):
     latitude:float=Field(ge=-90,le=90,allow_inf_nan=False)
     longitude:float=Field(ge=-180,le=180,allow_inf_nan=False)
     idempotency_key:UUID
+    selected_attachments:list[SelectedAttachment]=Field(default=[])
+    fuel_included:bool=Field(default=False)
 
 def quote_for(p,m):
     require(p.end_at>p.start_at and p.end_at-p.start_at<=timedelta(days=2),'Choose a duration between 0 and 48 hours',422)
     quantity=Decimal(str((p.end_at-p.start_at).total_seconds()))/3600 if m['unit']=='hour' else p.acres
     require(quantity is not None,'Acreage required',422)
-    return quantity,bill(m['rate'],quantity,m['mobilization'])
+    addons_rate=Decimal('0')
+    if getattr(p,'selected_attachments',None):
+        for att in p.selected_attachments:
+            addons_rate += Decimal(str(att.rate))
+    fuel_extra=Decimal('0')
+    if getattr(p,'fuel_included',False) and m.get('fuel_rate_extra'):
+        fuel_extra=Decimal(str(m['fuel_rate_extra']))
+        addons_rate += fuel_extra
+    b=bill(m['rate'],quantity,m['mobilization'],addons_rate=addons_rate)
+    return quantity,b,addons_rate,fuel_extra
 @app.post('/api/quote')
 def quote(p:Booking,u=Depends(user)):
     with db() as c:
         m=one(c,'SELECT * FROM machines WHERE id=%s AND active',(p.machine_id,))
         require(m is not None,'Machine unavailable',404)
-        q,b=quote_for(p,m)
-        return {**b,'quantity':q,'unit':m['unit'],'rate':m['rate'],'payment':'Directly to owner outside platform'}
+        q,b,addons_rate,fuel_extra=quote_for(p,m)
+        return {**b,'quantity':q,'unit':m['unit'],'rate':m['rate'],'addons_rate':addons_rate,'fuel_extra':fuel_extra,'payment':'Directly to owner outside platform'}
 @app.post('/api/bookings')
 def book(p:Booking,u=Depends(user)):
     require('farmer' in u['roles'],'Farmer role required')
@@ -249,18 +282,19 @@ def book(p:Booking,u=Depends(user)):
         m=one(c,'SELECT * FROM machines WHERE id=%s FOR UPDATE',(p.machine_id,))
         require(m and m['active'],'Machine unavailable',404)
         require(m['owner_id']!=u['id'],'Cannot book your own machine',422)
-        quantity,b=quote_for(p,m)
+        quantity,b,addons_rate,fuel_extra=quote_for(p,m)
         reserved_until=p.end_at+timedelta(minutes=m['buffer_minutes'])
         blocked=one(c,"SELECT id FROM maintenance WHERE machine_id=%s AND tstzrange(start_at,end_at,'[)') && tstzrange(%s,%s,'[)')",(p.machine_id,p.start_at,reserved_until))
         require(not blocked,'Machine under maintenance during this interval',409)
         ident=uid()
-        row=one(c,'INSERT INTO bookings(id,machine_id,farmer_id,start_at,end_at,reserved_until,quantity,latitude,longitude,rate,unit,mobilization,estimate,idempotency_key,request_hash) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *',(ident,p.machine_id,u['id'],p.start_at,p.end_at,reserved_until,quantity,p.latitude,p.longitude,m['rate'],m['unit'],m['mobilization'],b['total'],p.idempotency_key,req_hash))
+        sel_att_json=Jsonb([att.model_dump(mode='json') for att in p.selected_attachments])
+        row=one(c,'INSERT INTO bookings(id,machine_id,farmer_id,start_at,end_at,reserved_until,quantity,latitude,longitude,rate,unit,mobilization,estimate,idempotency_key,request_hash,selected_attachments,fuel_included,fuel_extra) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *',(ident,p.machine_id,u['id'],p.start_at,p.end_at,reserved_until,quantity,p.latitude,p.longitude,m['rate'],m['unit'],m['mobilization'],b['total'],p.idempotency_key,req_hash,sel_att_json,p.fuel_included,fuel_extra))
         audit(c,u['id'],ident,'BOOKING_REQUESTED')
         notify(c,m['owner_id'],f'New booking request {ident}')
         notify(c,u['id'],f'Booking {ident} awaits owner approval')
         return row
 
-BOOKING_SELECT='''SELECT b.*,m.name AS machine_name,m.owner_id,m.village,u.name AS farmer_name FROM bookings b JOIN machines m ON m.id=b.machine_id JOIN users u ON u.id=b.farmer_id'''
+BOOKING_SELECT='''SELECT b.*,m.name AS machine_name,m.category AS machine_category,m.owner_id,m.village,u.name AS farmer_name,u.phone AS farmer_phone,ow.name AS owner_name,ow.phone AS owner_phone FROM bookings b JOIN machines m ON m.id=b.machine_id JOIN users u ON u.id=b.farmer_id JOIN users ow ON ow.id=m.owner_id'''
 def booking_access(c,ident,u,lock=False):
     row=one(c,BOOKING_SELECT+' WHERE b.id=%s'+(' FOR UPDATE OF b' if lock else ''),(ident,))
     require(row is not None,'Booking not found',404)
@@ -344,7 +378,13 @@ def meter_confirm(ident:UUID,p:Verify,u=Depends(user)):
         else:
             hours=meter_quantity(b['meter_start'],data['reading'])
             quantity=hours if b['unit']=='hour' else Decimal(data['acres'])
-            total=bill(b['rate'],quantity,b['mobilization'])['total']
+            addons_rate=Decimal('0')
+            if b.get('selected_attachments'):
+                for att in b['selected_attachments']:
+                    addons_rate += Decimal(str(att.get('rate', 0)))
+            if b.get('fuel_included') and b.get('fuel_extra'):
+                addons_rate += Decimal(str(b['fuel_extra']))
+            total=bill(b['rate'],quantity,b['mobilization'],addons_rate=addons_rate)['total']
             c.execute("UPDATE bookings SET meter_end=%s,actual_quantity=%s,final_total=%s,status='COMPLETED' WHERE id=%s",(data['reading'],quantity,total,ident))
         audit(c,u['id'],ident,'METER_'+data['stage'].upper()+'_CONFIRMED',data)
         notify(c,b['owner_id'],f'Booking {ident}: {data["stage"]} reading confirmed by farmer')
@@ -361,23 +401,78 @@ def payment(ident:UUID,p:PaymentReport,u=Depends(user)):
         notify(c,b['owner_id'],f'Booking {ident}: manually reported {p.status}; not verified')
         notify(c,b['farmer_id'],f'Booking {ident}: manually reported {p.status}; not verified')
     return {'status':p.status,'notice':'Manually reported; not independently verified'}
-class Rating(BaseModel):
+class RatingPayload(BaseModel):
     score:int=Field(ge=1,le=5)
+    punctuality:int=Field(default=5,ge=1,le=5)
+    badges:list[str]=Field(default=[])
     comment:str=Field(default='',max_length=500)
+
 @app.post('/api/bookings/{ident}/rating')
-def rate(ident:UUID,p:Rating,u=Depends(user)):
+def rate(ident:UUID,p:RatingPayload,u=Depends(user)):
     with db() as c:
         b=booking_access(c,ident,u,True)
-        require(b['status']=='COMPLETED' and u['id'] in (b['farmer_id'],b['owner_id']))
+        require(b['status']=='COMPLETED' and u['id'] in (b['farmer_id'],b['owner_id']),'Only completed bookings can be rated')
         target=b['owner_id'] if u['id']==b['farmer_id'] else b['farmer_id']
-        c.execute('INSERT INTO ratings VALUES(%s,%s,%s,%s,%s) ON CONFLICT(booking_id,author_id) DO UPDATE SET score=EXCLUDED.score,comment=EXCLUDED.comment',(ident,u['id'],target,p.score,p.comment))
+        c.execute('''INSERT INTO ratings(booking_id,author_id,target_id,score,punctuality,badges,comment,created_at)
+                     VALUES(%s,%s,%s,%s,%s,%s,%s,now())
+                     ON CONFLICT(booking_id,author_id) DO UPDATE
+                     SET score=EXCLUDED.score,punctuality=EXCLUDED.punctuality,badges=EXCLUDED.badges,comment=EXCLUDED.comment''',
+                  (ident,u['id'],target,p.score,p.punctuality,p.badges,p.comment))
+        audit(c,u['id'],ident,'RATING_SUBMITTED',{'score':p.score,'punctuality':p.punctuality,'badges':p.badges})
     return {'ok':True}
+
+@app.get('/api/machines/{ident}/reviews')
+def machine_reviews(ident:UUID):
+    with db() as c:
+        return many(c,'''SELECT r.score,r.punctuality,r.badges,r.comment,r.created_at,u.name AS author_name
+                          FROM ratings r
+                          JOIN bookings b ON b.id=r.booking_id
+                          JOIN users u ON u.id=r.author_id
+                          WHERE b.machine_id=%s ORDER BY r.created_at DESC LIMIT 50''',(ident,))
+
+@app.get('/api/bookings/{ident}/rating')
+def get_booking_rating(ident:UUID,u=Depends(user)):
+    with db() as c:
+        booking_access(c,ident,u)
+        return one(c,'SELECT score,punctuality,badges,comment,created_at FROM ratings WHERE booking_id=%s AND author_id=%s',(ident,u['id']))
+
 @app.get('/api/bookings/{ident}/invoice')
 def invoice(ident:UUID,u=Depends(user)):
     with db() as c:
         b=booking_access(c,ident,u)
         require(b['status']=='COMPLETED','Final invoice requires confirmed completion',409)
-        return {'invoice_number':'YS-'+str(ident),'booking':b,'breakdown':bill(b['rate'],b['actual_quantity'],b['mobilization']),'notice':'Rental bill, not proof of payment. Payment status is manually reported and not independently verified. No platform fee. Tax treatment requires owner configuration before a real commercial pilot.'}
+        owner=one(c,'SELECT name,phone FROM users WHERE id=%s',(b['owner_id'],))
+        farmer=one(c,'SELECT name,phone FROM users WHERE id=%s',(b['farmer_id'],))
+        machine=one(c,'SELECT name,category,village FROM machines WHERE id=%s',(b['machine_id'],))
+        
+        addons_rate=Decimal('0')
+        att_list=b.get('selected_attachments') or []
+        for att in att_list:
+            addons_rate += Decimal(str(att.get('rate', 0)))
+        fuel_extra=Decimal(str(b.get('fuel_extra', 0))) if b.get('fuel_included') else Decimal('0')
+        addons_rate += fuel_extra
+        
+        breakdown=bill(b['rate'],b['actual_quantity'],b['mobilization'],addons_rate=addons_rate)
+        return {
+            'invoice_number':'YS-INV-'+str(ident)[:8].upper(),
+            'booking_id':str(ident),
+            'issued_at':datetime.now(timezone.utc).isoformat(),
+            'booking':b,
+            'owner':owner,
+            'farmer':farmer,
+            'machine':machine,
+            'breakdown':{
+                **breakdown,
+                'rate':str(b['rate']),
+                'quantity':str(b['actual_quantity']),
+                'unit':b['unit'],
+                'selected_attachments':att_list,
+                'fuel_included':b.get('fuel_included',False),
+                'fuel_extra':str(fuel_extra),
+            },
+            'payment_status':b['payment_status'],
+            'notice':'Rental bill for agricultural machinery sharing. Payment status is manually reported outside the platform and not independently verified. No platform commission or escrow fee.'
+        }
 @app.get('/api/notifications')
 def notifications(u=Depends(user)):
     with db() as c: return many(c,'SELECT * FROM notifications WHERE user_id=%s ORDER BY created_at DESC LIMIT 100',(u['id'],))

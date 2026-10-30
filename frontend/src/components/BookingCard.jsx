@@ -1,5 +1,5 @@
 import React from 'react';
-import { CalendarDays, IndianRupee } from 'lucide-react';
+import { CalendarDays, IndianRupee, Wrench, Fuel, Star } from 'lucide-react';
 import { api } from '../api';
 import { INR, dt, translate } from '../locales';
 
@@ -16,6 +16,7 @@ export function BookingCard({ booking: b, user: u, busy, run, load, setModal, no
 
   const statusLabel = t(b.status) || b.status.replaceAll('_', ' ');
   const paymentLabel = t(b.payment_status) || b.payment_status.replaceAll('_', ' ');
+  const selectedAttachments = Array.isArray(b.selected_attachments) ? b.selected_attachments : [];
 
   return (
     <article className="booking-card">
@@ -39,6 +40,49 @@ export function BookingCard({ booking: b, user: u, busy, run, load, setModal, no
           {b.final_total ? INR(b.final_total) + ' final' : INR(b.estimate) + ' estimated'}
         </span>
       </div>
+
+      {/* Add-on Attachments and Fuel Chips */}
+      {(selectedAttachments.length > 0 || b.fuel_included) && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', margin: '8px 0' }}>
+          {selectedAttachments.map((att, idx) => (
+            <span
+              key={idx}
+              style={{
+                background: '#f0fdf4',
+                color: '#166534',
+                border: '1px solid #bbf7d0',
+                fontSize: '11px',
+                fontWeight: '600',
+                padding: '2px 8px',
+                borderRadius: '6px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px',
+              }}
+            >
+              <Wrench size={11} /> +{att.name}
+            </span>
+          ))}
+          {b.fuel_included && (
+            <span
+              style={{
+                background: '#fefce8',
+                color: '#854d0e',
+                border: '1px solid #fef08a',
+                fontSize: '11px',
+                fontWeight: '600',
+                padding: '2px 8px',
+                borderRadius: '6px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px',
+              }}
+            >
+              <Fuel size={11} /> +Diesel Included
+            </span>
+          )}
+        </div>
+      )}
 
       <p className="caption">
         {t('farmerLabel')}: {b.farmer_name} · {paymentLabel} — manually reported, not independently verified.
@@ -83,14 +127,14 @@ export function BookingCard({ booking: b, user: u, busy, run, load, setModal, no
         {b.status === 'COMPLETED' && (
           <>
             <button
-              className="outline"
+              className="primary"
               onClick={() =>
                 run(async () =>
                   setModal({ type: 'invoice', data: await api('/bookings/' + b.id + '/invoice') })
                 )
               }
             >
-              {t('viewInvoiceBtn')}
+              📄 {t('viewInvoiceBtn')}
             </button>
 
             {(owner || farmer) && (
@@ -115,8 +159,13 @@ export function BookingCard({ booking: b, user: u, busy, run, load, setModal, no
                   <option value="PAYMENT_DISPUTED">{t('PAYMENT_DISPUTED')}</option>
                 </select>
 
-                <button className="outline" onClick={() => setModal({ type: 'rating', b })}>
-                  {t('rateExperienceBtn')}
+                <button
+                  className="outline"
+                  onClick={() => setModal({ type: 'rating', b })}
+                  style={{ display: 'flex', alignItems: 'center', gap: '4px' }}
+                >
+                  <Star size={14} color="#f59e0b" fill="#f59e0b" />
+                  <span>{t('rateExperienceBtn')}</span>
                 </button>
               </>
             )}
@@ -141,4 +190,3 @@ export function BookingCard({ booking: b, user: u, busy, run, load, setModal, no
     </article>
   );
 }
-

@@ -28,3 +28,12 @@ def test_infeasible_route_is_not_faked():
     assert not optimize((30,75),jobs)['feasible']
 def test_solver_limit():
     with pytest.raises(ValueError):optimize((30,75),[])
+
+def test_bill_with_attachments_and_fuel_addon():
+    # Base 650/hr + 200/hr (Rotavator) + 150/hr (Diesel) = 1000/hr * 3 hrs + 250 mob = 3250.00
+    res = bill('650', '3.0', '250', addons_rate='350')
+    assert res['base_rental'] == Decimal('1950.00')
+    assert res['addons'] == Decimal('1050.00')
+    assert res['rental'] == Decimal('3000.00')
+    assert res['mobilization'] == Decimal('250.00')
+    assert res['total'] == Decimal('3250.00')
