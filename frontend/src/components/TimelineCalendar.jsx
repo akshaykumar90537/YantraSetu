@@ -23,11 +23,12 @@ export function TimelineCalendar({
   if (selectedStart && selectedEnd) {
     const reqStart = new Date(selectedStart).getTime();
     const reqEnd = new Date(selectedEnd).getTime();
+    const reqReservedUntil = reqEnd + (buffer_minutes || 0) * 60 * 1000;
 
     for (const r of reserved) {
       const bStart = new Date(r.start_at).getTime();
       const bEnd = new Date(r.reserved_until || r.end_at).getTime();
-      if (reqStart < bEnd && reqEnd > bStart) {
+      if (reqStart < bEnd && reqReservedUntil > bStart) {
         isConflict = true;
         conflictReason = `Overlaps with ${r.status || 'RESERVED'} booking (${dt(r.start_at)} – ${dt(bEnd)})`;
         break;
@@ -38,7 +39,7 @@ export function TimelineCalendar({
       for (const m of maintenance) {
         const mStart = new Date(m.start_at).getTime();
         const mEnd = new Date(m.end_at).getTime();
-        if (reqStart < mEnd && reqEnd > mStart) {
+        if (reqStart < mEnd && reqReservedUntil > mStart) {
           isConflict = true;
           conflictReason = `Machine blocked for maintenance: ${m.reason || 'Service'} (${dt(m.start_at)} – ${dt(mEnd)})`;
           break;

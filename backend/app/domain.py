@@ -66,7 +66,7 @@ def optimize(depot, jobs, speed_kmh=20):
     return best
 
 def find_next_available_slot(now_dt, busy_intervals, buffer_minutes=15, duration_minutes=120):
-    """Finds next continuous free slot of duration_minutes starting at or after now_dt."""
+    """Finds next continuous free slot of duration_minutes starting at or after now_dt, accounting for turnaround buffer."""
     from datetime import timedelta
     minute = (now_dt.minute // 15 + 1) * 15
     curr = now_dt.replace(second=0, microsecond=0)
@@ -84,11 +84,14 @@ def find_next_available_slot(now_dt, busy_intervals, buffer_minutes=15, duration
     intervals.sort(key=lambda x: x[0])
     
     req_dur = timedelta(minutes=duration_minutes)
+    buf_dur = timedelta(minutes=buffer_minutes)
     candidate_start = curr
     for s, e in intervals:
-        if candidate_start + req_dur <= s:
-            return {'start_at': candidate_start.isoformat(), 'end_at': (candidate_start + req_dur).isoformat()}
-        if candidate_start < e:
+        if candidate_start < s:
+            if candidate_start + req_dur + buf_dur <= s:
+                return {'start_at': candidate_start.isoformat(), 'end_at': (candidate_start + req_dur).isoformat()}
+            candidate_start = max(candidate_start, e)
+        elif candidate_start < e:
             candidate_start = e
     return {'start_at': candidate_start.isoformat(), 'end_at': (candidate_start + req_dur).isoformat()}
 

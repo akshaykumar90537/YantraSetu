@@ -1,4 +1,5 @@
 import os, secrets, hashlib, hmac, json
+from pathlib import Path
 from uuid import uuid4, UUID
 from datetime import datetime, timedelta, timezone, date
 from decimal import Decimal
@@ -8,6 +9,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, AwareDatetime
 from psycopg.errors import ExclusionViolation
 from psycopg.types.json import Jsonb
+from dotenv import load_dotenv
+
+# Automatically load .env if present in project root or parent
+env_path = Path(__file__).resolve().parents[2] / '.env'
+if env_path.exists():
+    load_dotenv(env_path, override=False)
+else:
+    load_dotenv(override=False)
+
 from app.db import db, one, many
 from app.domain import bill, meter_quantity, optimize, find_next_available_slot
 from app.sms import provider
@@ -24,6 +34,7 @@ app.add_middleware(CORSMiddleware,allow_origins=[ORIGIN],allow_credentials=True,
 async def safety_headers(request,call_next):
     if request.method in ('POST','PATCH','DELETE','PUT'):
         if request.headers.get('x-requested-with')!='YantraSetu' or request.headers.get('origin',ORIGIN)!=ORIGIN:
+            _ = await request.body()
             return Response('Invalid request origin',403)
     response=await call_next(request)
     response.headers['X-Content-Type-Options']='nosniff'
@@ -88,8 +99,8 @@ class Verify(BaseModel):
     challenge_id:UUID
     code:str=Field(pattern=r'^\d{6}$')
 class LoginVerify(Verify):
-    name:str=Field(min_length=2,max_length=80)
-    roles:list[Literal['farmer','owner','operator','fpo']]=Field(default=['farmer'],min_length=1,max_length=4)
+    name:str|None=Field(default=None,min_length=2,max_length=80)
+    roles:list[Literal['farmer','owner','operator','fpo']]|None=Field(default=None,min_length=1,max_length=4)
     language:Literal['en','hi','pa']='en'
 
 @app.get('/api/health')
@@ -99,15 +110,40 @@ def health():
 @app.post('/api/auth/request')
 def login(p:Login,request:Request):
     with db() as c:
-        throttle(c,'ip:'+request.client.host,20,600)
-        return issue(c,p.phone,'login',{})
+        client_host = request.client.host if request.client else '127.0.0.1'
+        throttle(c,'ip:'+client_host,20,600)
+        existing = one(c,'SELECT id,name,roles,phone FROM users WHERE phone=%s',(p.phone,))
+        res = issue(c,p.phone,'login',{'user_exists': existing is not None})
+        res['is_new_user'] = existing is None
+        if existing:
+            res['user_name'] = existing['name']
+            res['user_roles'] = existing['roles']
+        return res
 @app.post('/api/auth/verify')
 def verify(p:LoginVerify,response:Response):
     with db() as c:
         row=consume(c,p.challenge_id,p.code,'login')
         u=one(c,'SELECT * FROM users WHERE phone=%s',(row['phone'],))
         if not u:
-            u=one(c,'INSERT INTO users(id,phone,name,roles,language) VALUES(%s,%s,%s,%s,%s) RETURNING *',(uid(),row['phone'],p.name,list(set(p.roles)),p.language))
+            require(p.name is not None and len(p.name.strip())>=2,'Your name is required to complete new account registration',422)
+            assigned_roles=list(set(p.roles)) if p.roles else ['farmer']
+            import uuid
+            phone_uuid=str(uuid.uuid5(uuid.NAMESPACE_OID,row['phone']))
+            u=one(c,'INSERT INTO users(id,phone,name,roles,language) VALUES(%s,%s,%s,%s,%s) RETURNING *',(phone_uuid,row['phone'],p.name.strip(),assigned_roles,p.language))
+        else:
+            updates,args=[],[]
+            if p.name and p.name.strip() and p.name.strip()!=u['name']:
+                updates.append('name=%s')
+                args.append(p.name.strip())
+            if p.roles:
+                updates.append('roles=%s')
+                args.append(list(set(p.roles)))
+            if p.language and p.language!=u['language']:
+                updates.append('language=%s')
+                args.append(p.language)
+            if updates:
+                args.append(u['id'])
+                u=one(c,f"UPDATE users SET {','.join(updates)} WHERE id=%s RETURNING *",args)
         token=secrets.token_urlsafe(32)
         c.execute('INSERT INTO sessions VALUES(%s,%s,now()+interval \'24 hours\')',(digest(token),u['id']))
     response.set_cookie('ys_session',token,httponly=True,secure=not DEV,samesite='strict',max_age=86400,path='/')
@@ -141,9 +177,9 @@ class Machine(BaseModel):
     fuel_rate_extra:Decimal=Field(default=0,ge=0,le=50000,max_digits=12,decimal_places=2)
 
 MACHINE_SELECT='''SELECT m.id,m.owner_id,m.organization_id,m.name,m.category,m.description,m.village,m.rate,m.unit,m.mobilization,m.buffer_minutes,m.active,COALESCE(m.attachments, '[]'::jsonb) AS attachments,COALESCE(m.fuel_included, false) AS fuel_included,COALESCE(m.fuel_rate_extra, 0) AS fuel_rate_extra,u.name AS owner_name,u.phone AS owner_phone,ST_Y(m.location::geometry) AS latitude,ST_X(m.location::geometry) AS longitude,
-COALESCE((SELECT ROUND(AVG(r.score)::numeric, 1) FROM ratings r JOIN bookings b ON b.id=r.booking_id WHERE b.machine_id=m.id), 0) AS rating_avg,
-COALESCE((SELECT COUNT(*) FROM ratings r JOIN bookings b ON b.id=r.booking_id WHERE b.machine_id=m.id), 0) AS rating_count,
-COALESCE((SELECT array_agg(DISTINCT badge) FROM ratings r JOIN bookings b ON b.id=r.booking_id, unnest(r.badges) AS badge WHERE b.machine_id=m.id), ARRAY[]::text[]) AS badges
+COALESCE((SELECT ROUND(AVG(r.score)::numeric, 1) FROM ratings r JOIN bookings b ON b.id=r.booking_id WHERE b.machine_id=m.id AND r.target_id=m.owner_id), 0) AS rating_avg,
+COALESCE((SELECT COUNT(*) FROM ratings r JOIN bookings b ON b.id=r.booking_id WHERE b.machine_id=m.id AND r.target_id=m.owner_id), 0) AS rating_count,
+COALESCE((SELECT array_agg(DISTINCT badge) FROM ratings r JOIN bookings b ON b.id=r.booking_id, unnest(r.badges) AS badge WHERE b.machine_id=m.id AND r.target_id=m.owner_id), ARRAY[]::text[]) AS badges
 FROM machines m JOIN users u ON u.id=m.owner_id'''
 @app.post('/api/machines')
 def create_machine(p:Machine,u=Depends(user)):
@@ -322,6 +358,8 @@ def action(ident:UUID,p:Action,u=Depends(user)):
         audit(c,u['id'],ident,state)
         notify(c,b['farmer_id'],f'Booking {ident}: {state}')
         notify(c,b['owner_id'],f'Booking {ident}: {state}')
+        if b.get('operator_id'):
+            notify(c,b['operator_id'],f'Booking {ident}: {state}')
     return {'status':state}
 class OperatorAssignment(BaseModel):
     phone:str=Field(pattern=r'^\+91[6-9]\d{9}$')
@@ -371,7 +409,8 @@ def meter_confirm(ident:UUID,p:Verify,u=Depends(user)):
         require(b['status']==expected,'Reading no longer applies',409)
         if data['stage']=='start':
             one(c,'SELECT id FROM machines WHERE id=%s FOR UPDATE',(b['machine_id'],))
-            require(b['start_at']<=datetime.now(timezone.utc)<b['end_at'],'Work can start only within the approved time slot',409)
+            now_utc = datetime.now(timezone.utc)
+            require(b['start_at'] - timedelta(minutes=15) <= now_utc < b['reserved_until'], 'Work can start only from 15 minutes before start time until the end of the reserved slot', 409)
             running=one(c,"SELECT id FROM bookings WHERE machine_id=%s AND status='IN_PROGRESS' AND id<>%s",(b['machine_id'],ident))
             require(not running,'Previous job is still in progress. Resolve the overrun before starting.',409)
             c.execute("UPDATE bookings SET meter_start=%s,status='IN_PROGRESS' WHERE id=%s",(Decimal(data['reading']),ident))
@@ -427,8 +466,9 @@ def machine_reviews(ident:UUID):
         return many(c,'''SELECT r.score,r.punctuality,r.badges,r.comment,r.created_at,u.name AS author_name
                           FROM ratings r
                           JOIN bookings b ON b.id=r.booking_id
+                          JOIN machines m ON m.id=b.machine_id
                           JOIN users u ON u.id=r.author_id
-                          WHERE b.machine_id=%s ORDER BY r.created_at DESC LIMIT 50''',(ident,))
+                          WHERE b.machine_id=%s AND r.target_id=m.owner_id ORDER BY r.created_at DESC LIMIT 50''',(ident,))
 
 @app.get('/api/bookings/{ident}/rating')
 def get_booking_rating(ident:UUID,u=Depends(user)):

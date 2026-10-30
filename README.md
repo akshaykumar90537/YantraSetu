@@ -1,6 +1,3 @@
-<<<<<<< HEAD
-# YantraSetu
-=======
 # YantraSetu — native local development
 
 **Don’t buy what your village can share.**
@@ -152,4 +149,3 @@ Press **Ctrl+C** in the frontend and backend terminals. This stops the applicati
 ## External decisions
 
 No external service is active. See `docs/EXTERNAL_SERVICES.md` for live-SMS requirements. Hosting, real pilot data, liability terms and public deployment still require the project owner's decisions. Docker is excluded from the current scope and must not be reintroduced without a new request.
->>>>>>> b03a3a7 (feat: initial release with native PostgreSQL/PostGIS support, modularized UI, and trilingual localization (en/hi/pa))

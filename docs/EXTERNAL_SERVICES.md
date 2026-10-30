@@ -41,7 +41,7 @@ Configure approved credentials through a Git-ignored environment file or deploym
 ## Other dependencies
 
 - **Hosting:** Owner must choose provider/account/budget and authorize production deployment. Current package runs locally; there is no cloud subscription or domain.
-- **Maps:** No external tile/geocoding/routing API is contacted. Search uses PostGIS. Future OpenStreetMap-based integrations still need review of tile/provider quotas, attribution and caching policies; open map data is not a promise of unrestricted free hosted tiles.
+- **Maps & Weather:** OpenStreetMap tiles (`tile.openstreetmap.org`), Nominatim village search (`nominatim.openstreetmap.org`), and Open-Meteo forecast API (`api.open-meteo.com`) are accessed directly from the client browser with offline fallbacks. Core distance and machinery searches remain server-authoritative PostGIS. Review provider quotas, rate limits, and attribution policies prior to commercial rollout.
 - **Real pilot data:** Owner supplies/authorizes real equipment data and photos. The seed uses synthetic, labeled data.
 - **Business terms:** Cancellation penalties, liability/damage rules, operator acceptance rules and verification standards need owner decisions before commercial use. No default commission or automated refund exists.
 - **Payments:** Excluded, including test gateways. Do not request merchant credentials. All status reports remain manually reported.
