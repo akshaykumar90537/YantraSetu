@@ -571,3 +571,4 @@ export function WeatherDashboard({ latitude = 30.901, longitude = 75.857, onSele
     </div>
   );
 }
+
