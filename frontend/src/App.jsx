@@ -7,7 +7,6 @@ import {
   MapPin,
   CalendarDays,
   Tractor,
-  Route,
   Users,
   LogOut,
   Bell,
@@ -80,7 +79,6 @@ function Workspace({ initialUser, onLogout }) {
   const [lon, setLon] = useState('75.857');
   const [cached, setCached] = useState(false);
   const [searched, setSearched] = useState(false);
-  const [routeResult, setRouteResult] = useState(null);
   const [drafts, setDrafts] = useState([]);
   const [showMap, setShowMap] = useState(true);
 
@@ -218,7 +216,6 @@ function Workspace({ initialUser, onLogout }) {
     ...(u?.roles.includes('owner')
       ? [
           ['fleet', Tractor, t('fleet')],
-          ['routes', Route, t('routes')],
         ]
       : []),
     ...(u?.roles.includes('fpo') ? [['org', Users, t('org')]] : []),
@@ -298,7 +295,6 @@ function Workspace({ initialUser, onLogout }) {
             >
               <Icon size={19} />
               <span>{label}</span>
-              {key === 'routes' && <i>LINK</i>}
             </button>
           ))}
         </nav>
@@ -881,87 +877,6 @@ function Workspace({ initialUser, onLogout }) {
                           </tbody>
                         </table>
                       </div>
-                    </>
-                  )}
-
-                  {tab === 'routes' && (
-                    <>
-                      <div className="route-intro">
-                        <Route size={42} />
-                        <h2>{t('routeIntroTitle')}</h2>
-                        <p>{t('routeIntroSub')}</p>
-                      </div>
-                      <form
-                        className="panel inline-form"
-                        onSubmit={(e) => {
-                          e.preventDefault();
-                          const f = new FormData(e.target);
-                          run(async () =>
-                            setRouteResult(
-                              await api(`/routes/${f.get('machine')}?day=${f.get('day')}`)
-                            )
-                          );
-                        }}
-                      >
-                        <FormField label={t('yourMachine')}>
-                          <select name="machine" required>
-                            <option value="">{t('selectEquipment')}</option>
-                            {fleet.map((m) => (
-                              <option key={m.id} value={m.id}>
-                                {m.name}
-                              </option>
-                            ))}
-                          </select>
-                        </FormField>
-                        <FormField label={t('workingDay')}>
-                          <input name="day" type="date" required />
-                        </FormField>
-                        <button className="primary" disabled={busy || !fleet.length}>
-                          {t('calculateRouteBtn')} <ArrowRight size={16} />
-                        </button>
-                      </form>
-
-                      {routeResult && (
-                        <section className="panel">
-                          {routeResult.feasible ? (
-                            <>
-                              <div className="stats">
-                                <Stat
-                                  label={t('separateTripsEst')}
-                                  value={routeResult.baseline_km + ' km'}
-                                />
-                                <Stat
-                                  label={t('combinedRouteEst')}
-                                  value={routeResult.estimated_km + ' km'}
-                                />
-                                <Stat
-                                  label={t('potentialSaved')}
-                                  value={routeResult.saved_km + ' km'}
-                                />
-                              </div>
-                              <ol className="timeline">
-                                {routeResult.stops.map((s) => (
-                                  <li key={s.id}>
-                                    <strong>Booking {s.id.slice(0, 8)}</strong>
-                                    <span>
-                                      {Math.floor(s.start_minute / 60)}:
-                                      {String(Math.floor(s.start_minute % 60)).padStart(2, '0')}{' '}
-                                      · {s.leg_km} km estimated travel
-                                    </span>
-                                  </li>
-                                ))}
-                              </ol>
-                              <p>{routeResult.assumptions}</p>
-                              <small>
-                                {routeResult.solver} · {t('solverTime')}: {routeResult.elapsed_ms}{' '}
-                                ms
-                              </small>
-                            </>
-                          ) : (
-                            <div className="alert">{routeResult.reason}</div>
-                          )}
-                        </section>
-                      )}
                     </>
                   )}
 

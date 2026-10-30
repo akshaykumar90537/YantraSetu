@@ -3,7 +3,6 @@ export const en = {
   explore: 'Find machinery',
   bookings: 'My bookings',
   fleet: 'My machinery',
-  routes: 'YantraLink',
   org: 'FPO workspace',
   activity: 'Notifications',
   sign: 'Sign in / Sign up',
@@ -50,12 +49,6 @@ export const en = {
   noMachinerySub: 'Expand your radius, change location, or add your first listing.\nThe demo seed command in the README adds clearly labeled sample equipment.',
   offlineBanner: 'Offline · cached results only. Availability must be checked online.',
 
-  // YantraLink Banner
-  meetYantraLink: 'MEET YANTRALINK',
-  yantraLinkTitle: 'Less travel. More time in the field.',
-  yantraLinkSub: 'Coordinate nearby bookings into one feasible daily route.',
-  exploreRoutes: 'Explore routes',
-
   // Workspace
   workspaceEyebrow: 'YOUR YANTRASETU WORKSPACE',
   workspaceSub: 'Real records, clear decisions, shared progress.',
@@ -79,18 +72,6 @@ export const en = {
   availabilityCol: 'Availability',
   calendarBtn: 'Calendar',
   blockTimeBtn: 'Block time',
-
-  // YantraLink Page
-  routeIntroTitle: 'Turn separate trips into a shared route.',
-  routeIntroSub: 'YantraLink evaluates approved bookings for one machine, preserving their start times. Up to 8 jobs per run. Distances are straight-line estimates, not road navigation.',
-  yourMachine: 'Your machine',
-  selectEquipment: 'Select equipment',
-  workingDay: 'Working day · India time',
-  calculateRouteBtn: 'Calculate route',
-  separateTripsEst: 'Separate trips · estimated',
-  combinedRouteEst: 'Combined route · estimated',
-  potentialSaved: 'Potential distance saved',
-  solverTime: 'Measured solver time',
 
   // FPO
   fpoTitle: 'FPO / CHC organization name',

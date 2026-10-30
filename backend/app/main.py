@@ -19,7 +19,7 @@ else:
     load_dotenv(override=False)
 
 from app.db import db, one, many
-from app.domain import bill, meter_quantity, optimize, find_next_available_slot, validate_booking_interval, MIN_BOOKING_DURATION, MAX_BOOKING_DURATION
+from app.domain import bill, meter_quantity, find_next_available_slot, validate_booking_interval, MIN_BOOKING_DURATION, MAX_BOOKING_DURATION
 from app.sms import provider
 from app.email_auth import email_mode, send_email, verify_google
 
@@ -840,26 +840,6 @@ def org_bookings(ident:UUID,u=Depends(user)):
     with db() as c:
         require(one(c,'SELECT id FROM organizations WHERE id=%s AND manager_id=%s',(ident,u['id'])) is not None)
         return many(c,BOOKING_SELECT+' WHERE m.organization_id=%s ORDER BY b.start_at',(ident,))
-@app.get('/api/routes/{machine_id}')
-def route(machine_id:UUID,day:date,u=Depends(user)):
-    from zoneinfo import ZoneInfo
-    import time
-    tz=ZoneInfo('Asia/Kolkata')
-    start=datetime.combine(day,datetime.min.time(),tzinfo=tz)
-    with db() as c:
-        m=one(c,MACHINE_SELECT+' WHERE m.id=%s',(machine_id,))
-        require(m and m['owner_id']==u['id'])
-        rows=many(c,"SELECT * FROM bookings WHERE machine_id=%s AND status='APPROVED' AND start_at>=%s AND start_at<%s ORDER BY start_at",(machine_id,start,start+timedelta(days=1)))
-    require(1<=len(rows)<=8,'Select a day with 1–8 approved bookings',422)
-    jobs=[]
-    for b in rows:
-        minute=(b['start_at']-start).total_seconds()/60
-        jobs.append({'id':str(b['id']),'point':(b['latitude'],b['longitude']),'earliest':minute,'latest_start':minute,'duration':(b['reserved_until']-b['start_at']).total_seconds()/60})
-    timer=time.perf_counter()
-    result=optimize((m['latitude'],m['longitude']),jobs)
-    result['elapsed_ms']=round((time.perf_counter()-timer)*1000,3)
-    result['run_id']=uid()
-    return result
 
 @app.exception_handler(ValueError)
 async def invalid(request,exc):

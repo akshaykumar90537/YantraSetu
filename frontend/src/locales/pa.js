@@ -3,7 +3,6 @@ export const pa = {
   explore: 'ਮਸ਼ੀਨ ਲੱਭੋ',
   bookings: 'ਮੇਰੀ ਬੁਕਿੰਗ',
   fleet: 'ਮੇਰੀਆਂ ਮਸ਼ੀਨਾਂ',
-  routes: 'ਯੰਤਰਲਿੰਕ',
   org: 'FPO ਕਾਰਜ ਖੇਤਰ',
   activity: 'ਸੂਚਨਾਵਾਂ',
   sign: 'ਸਾਈਨ ਇਨ / ਰਜਿਸਟਰ',
@@ -50,12 +49,6 @@ export const pa = {
   noMachinerySub: 'ਖੋਜ ਦਾ ਘੇਰਾ ਵਧਾਓ ਜਾਂ ਆਪਣੀ ਮਸ਼ੀਨ ਸ਼ਾਮਲ ਕਰੋ।',
   offlineBanner: 'ਆਫਲਾਈਨ · ਪੁਰਾਣੇ ਨਤੀਜੇ। ਉਪਲਬਧਤਾ ਆਨਲਾਈਨ ਜਾਂਚੋ।',
 
-  // YantraLink Banner
-  meetYantraLink: 'ਯੰਤਰਲਿੰਕ ਨਾਲ ਮਿਲੋ',
-  yantraLinkTitle: 'ਘੱਟ ਸਫ਼ਰ, ਖੇਤ ਵਿੱਚ ਵੱਧ ਕੰਮ।',
-  yantraLinkSub: 'ਨੇੜਲੀਆਂ ਬੁਕਿੰਗਾਂ ਨੂੰ ਇੱਕ ਸਾਂਝੇ ਰੋਜ਼ਾਨਾ ਰੂਟ ਵਿੱਚ ਬੰਨ੍ਹੋ।',
-  exploreRoutes: 'ਰੂਟ ਦੇਖੋ',
-
   // Workspace
   workspaceEyebrow: 'ਤੁਹਾਡਾ ਯੰਤਰਸੇਤੂ ਕਾਰਜ ਖੇਤਰ',
   workspaceSub: 'ਸਪੱਸ਼ਟ ਰਿਕਾਰਡ, ਸਹੀ ਫੈਸਲੇ, ਸਾਂਝੀ ਤਰੱਕੀ।',
@@ -79,18 +72,6 @@ export const pa = {
   availabilityCol: 'ਉਪਲਬਧਤਾ',
   calendarBtn: 'ਕੈਲੰਡਰ',
   blockTimeBtn: 'ਮੁਰੰਮਤ ਲਈ ਰੋਕੋ',
-
-  // YantraLink Page
-  routeIntroTitle: 'ਵੱਖਰੇ ਗੇੜਿਆਂ ਨੂੰ ਇੱਕ ਸਾਂਝੇ ਰੂਟ ਵਿੱਚ ਬਦਲੋ।',
-  routeIntroSub: 'ਯੰਤਰਲਿੰਕ ਇੱਕ ਮਸ਼ੀਨ ਦੀਆਂ ਪ੍ਰਵਾਨਿਤ ਬੁਕਿੰਗਾਂ ਦਾ ਸਹੀ ਰੂਟ ਤਿਆਰ ਕਰਦਾ ਹੈ। ਵੱਧ ਤੋਂ ਵੱਧ 8 ਕੰਮ।',
-  yourMachine: 'ਤੁਹਾਡੀ ਮਸ਼ੀਨ',
-  selectEquipment: 'ਮਸ਼ੀਨ ਚੁਣੋ',
-  workingDay: 'ਕੰਮ ਦਾ ਦਿਨ · ਭਾਰਤੀ ਸਮਾਂ',
-  calculateRouteBtn: 'ਰੂਟ ਤਿਆਰ ਕਰੋ',
-  separateTripsEst: 'ਵੱਖਰੇ ਗੇੜੇ · ਅੰਦਾਜ਼ਨ',
-  combinedRouteEst: 'ਸਾਂਝਾ ਰੂਟ · ਅੰਦਾਜ਼ਨ',
-  potentialSaved: 'ਬਚਾਇਆ ਜਾ ਸਕਣ ਵਾਲਾ ਸਫ਼ਰ',
-  solverTime: 'ਗਣਨਾ ਦਾ ਸਮਾਂ',
 
   // FPO
   fpoTitle: 'FPO / CHC ਸੰਸਥਾ ਦਾ ਨਾਮ',
