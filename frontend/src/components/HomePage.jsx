@@ -10,6 +10,13 @@ const equipmentIcons = {
   sprayer: Droplets,
 };
 
+const equipmentImages = {
+  tractor: '/images/tractor.jpg',
+  harvest: '/images/harvester.jpg',
+  implement: '/images/implement.jpg',
+  sprayer: '/images/sprayer.jpg',
+};
+
 const contentByLang = {
   en: {
     nav: {
@@ -478,6 +485,7 @@ export function HomePage({ onSignIn, lang = 'en', setLang }) {
           <div className="ys-equipment-tabs" aria-label="Equipment categories">
             {t.equipment.map((item, i) => {
               const IconComp = equipmentIcons[item.key] || Tractor;
+              const imgUrl = equipmentImages[item.key];
               return (
                 <button
                   key={item.key}
@@ -485,7 +493,9 @@ export function HomePage({ onSignIn, lang = 'en', setLang }) {
                   className={selected === i ? 'is-selected' : ''}
                   onClick={() => setSelected(i)}
                 >
-                  <IconComp size={24} />
+                  <div className="ys-tab-thumb-wrap">
+                    <img src={imgUrl} alt={item.name} className="ys-tab-thumb" />
+                  </div>
                   <span>{item.name}</span>
                   <ArrowUpRight size={16} />
                 </button>
@@ -494,8 +504,16 @@ export function HomePage({ onSignIn, lang = 'en', setLang }) {
           </div>
           <div className={`ys-equipment-detail ys-${machine.color}`}>
             <div className="ys-equipment-visual">
-              <MachineIcon size={112} strokeWidth={1} />
-              <span>{machine.name.toUpperCase()}</span>
+              <img
+                src={equipmentImages[machine.key]}
+                alt={machine.name}
+                className="ys-equipment-img"
+              />
+              <div className="ys-equipment-overlay" />
+              <div className="ys-equipment-badge">
+                <MachineIcon size={16} />
+                <span>{machine.name.toUpperCase()}</span>
+              </div>
               <span className="ys-visual-number">0{selected + 1}</span>
             </div>
             <div className="ys-equipment-copy" aria-live="polite">
