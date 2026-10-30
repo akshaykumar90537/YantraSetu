@@ -512,21 +512,6 @@ function Workspace({ initialUser, onLogout }) {
                 </button>
               </form>
 
-              <section className="how-strip">
-                <span>
-                  <b>01</b> {t('howStep1')}
-                </span>
-                <ChevronRight />
-                <span>
-                  <b>02</b> {t('howStep2')}
-                </span>
-                <ChevronRight />
-                <span>
-                  <b>03</b> {t('howStep3')}
-                </span>
-                <small>{t('howNote')}</small>
-              </section>
-
               {(() => {
                 const visibleMachines = machines.filter(
                   (m) => m.active !== false && m.is_active !== false && (!u || m.owner_id !== u.id)
@@ -611,26 +596,6 @@ function Workspace({ initialUser, onLogout }) {
                   </>
                 );
               })()}
-
-              <section className="link-promo">
-                <div className="link-icon">
-                  <Route size={30} />
-                </div>
-                <div>
-                  <span className="eyebrow">{t('meetYantraLink')}</span>
-                  <h2>{t('yantraLinkTitle')}</h2>
-                  <p>{t('yantraLinkSub')}</p>
-                </div>
-                <button
-                  className="outline"
-                  onClick={() => {
-                    if (!u) setModal({ type: 'login' });
-                    else setTab('routes');
-                  }}
-                >
-                  {t('exploreRoutes')} <ArrowUpRight size={17} />
-                </button>
-              </section>
             </>
           ) : tab === 'weather' ? (
             <WeatherDashboard
@@ -1011,7 +976,6 @@ function Workspace({ initialUser, onLogout }) {
             <span>
               <Sprout size={16} /> {t('footerTagline')}
             </span>
-            <span>{t('footerNotice')}</span>
           </footer>
         </main>
       </div>
