@@ -12,6 +12,15 @@
 .sidebar {
   transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
   z-index: 20;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+.sidebar::-webkit-scrollbar {
+  width: 4px;
+}
+.sidebar::-webkit-scrollbar-thumb {
+  background: #d4decb;
+  border-radius: 4px;
 }
 .sidebar-header {
   display: flex;

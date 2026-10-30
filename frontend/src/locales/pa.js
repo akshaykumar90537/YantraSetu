@@ -231,6 +231,18 @@ export const pa = {
   finalTotalLabel: 'ਕੁੱਲ ਰਕਮ',
   printPdfBtn: 'ਪ੍ਰਿੰਟ ਕਰੋ / PDF ਸਾਂਭੋ',
 
+  // Weather
+  fieldWeather: 'ਖੇਤ ਦਾ ਮੌਸਮ',
+  weatherAdvisory: 'ਖੇਤੀ ਸਲਾਹ',
+  weatherIdeal: 'ਵਹਾਈ ਅਤੇ ਵਾਢੀ ਲਈ ਅਨੁਕੂਲ ਮੌਸਮ',
+  weatherRainWarning: 'ਮੀਂਹ ਦਾ ਖ਼ਦਸ਼ਾ: ਵਹਾਈ ਅਤੇ ਵਾਢੀ ਰੋਕੋ',
+  weatherWindWarning: 'ਤੇਜ਼ ਹਵਾ: ਕੀਟਨਾਸ਼ਕ ਸਪਰੇਅ ਕਰਨ ਤੋਂ ਬਚੋ',
+  humidityLabel: 'ਨਮੀ',
+  windLabel: 'ਹਵਾ',
+  rainProbLabel: 'ਮੀਂਹ',
+  threeDayForecast: '3 ਦਿਨਾਂ ਦਾ ਅਨੁਮਾਨ',
+  hideForecast: 'ਅਨੁਮਾਨ ਛੁਪਾਓ',
+
   // Footer
   footerTagline: 'ਯੰਤਰਸੇਤੂ · ਜੋ ਪਿੰਡ ਵਿੱਚ ਸਾਂਝਾ ਹੋ ਸਕਦਾ ਹੈ, ਉਸਨੂੰ ਖਰੀਦਣ ਦੀ ਲੋੜ ਨਹੀਂ।',
   footerNotice: 'ਹੈਕਾਥੌਨ ਵਿਕਾਸ · ਕੋਈ ਅਸਲ SMS ਨਹੀਂ · ਕੋਈ ਆਨਲਾਈਨ ਭੁਗਤਾਨ ਨਹੀਂ',

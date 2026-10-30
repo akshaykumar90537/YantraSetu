@@ -36,6 +36,7 @@ import { ConfirmMeter } from './components/ConfirmMeter';
 import { Invoice } from './components/Invoice';
 import { MapPicker } from './components/MapPicker';
 import { RatingModal } from './components/RatingModal';
+import { WeatherWidget } from './components/WeatherWidget';
 import './style.css';
 
 export function App() {
@@ -281,6 +282,10 @@ export function App() {
             </button>
           ))}
         </nav>
+
+        {/* Real-time Field Weather & Agricultural Advisory */}
+        <WeatherWidget latitude={lat} longitude={lon} lang={lang} />
+
         <div className="sidebar-note">
           <Sprout size={26} />
           <h3>{t('ownLessTitle')}</h3>

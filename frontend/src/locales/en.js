@@ -231,6 +231,18 @@ export const en = {
   finalTotalLabel: 'Total',
   printPdfBtn: 'Print / Save Invoice as PDF',
 
+  // Weather
+  fieldWeather: 'Field Weather',
+  weatherAdvisory: 'Agri Advisory',
+  weatherIdeal: 'Ideal conditions for field operations',
+  weatherRainWarning: 'Rain expected: Delay tillage & harvesting',
+  weatherWindWarning: 'High winds: Delay spraying operations',
+  humidityLabel: 'Humidity',
+  windLabel: 'Wind',
+  rainProbLabel: 'Rain',
+  threeDayForecast: '3-day outlook',
+  hideForecast: 'Hide outlook',
+
   // Footer
   footerTagline: 'YantraSetu · Don’t buy what your village can share.',
   footerNotice: 'Hackathon development · No live SMS · No payment collection',

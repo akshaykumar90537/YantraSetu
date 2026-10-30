@@ -231,6 +231,18 @@ export const hi = {
   finalTotalLabel: 'कुल राशि',
   printPdfBtn: 'प्रिंट करें / PDF सहेजें',
 
+  // Weather
+  fieldWeather: 'खेत का मौसम',
+  weatherAdvisory: 'कृषि सलाह',
+  weatherIdeal: 'खेत जुताई और कटाई के लिए उत्तम मौसम',
+  weatherRainWarning: 'बारिश की संभावना: जुताई और कटाई टालें',
+  weatherWindWarning: 'तेज हवा: कीटनाशक छिड़काव से बचें',
+  humidityLabel: 'नमी',
+  windLabel: 'हवा',
+  rainProbLabel: 'बारिश',
+  threeDayForecast: '3-दिन का पूर्वानुमान',
+  hideForecast: 'पूर्वानुमान छिपाएं',
+
   // Footer
   footerTagline: 'यंत्रसेतु · जो गाँव में साझा हो सकता है, उसे खरीदने की ज़रूरत नहीं।',
   footerNotice: 'हैकाथॉन विकास · कोई वास्तविक SMS नहीं · कोई ऑनलाइन भुगतान नहीं',
