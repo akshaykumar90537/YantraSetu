@@ -10,7 +10,7 @@
 
 /* Sidebar Toggle & Responsive Drawer Enhancements */
 .sidebar {
-  transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   z-index: 20;
   overflow-y: auto;
   overflow-x: hidden;
@@ -25,26 +25,46 @@
 .sidebar-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   width: 100%;
 }
-.sidebar-collapse-btn {
-  background: #f1f4ed;
+
+/*
+  Single rail toggle — fixed to viewport, tracks the sidebar right edge.
+  Open  (default): left = sidebar width (236px)
+  Closed (.sidebar-collapsed): left = 0
+  Transition matches the sidebar slide animation.
+*/
+.sidebar-rail-toggle {
+  position: fixed;
+  top: 24px;
+  left: 236px;
+  width: 30px;
+  height: 34px;
+  background: #fff;
   border: 1px solid #dce4d5;
-  border-radius: 6px;
-  padding: 6px;
-  color: #466047;
+  border-left: none;
+  border-radius: 0 8px 8px 0;
+  box-shadow: 3px 0 8px rgba(40,88,62,0.12);
+  color: #28583e;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  z-index: 30;
+  transition: left 0.3s cubic-bezier(0.4, 0, 0.2, 1), background 0.15s, color 0.15s;
 }
-.sidebar-collapse-btn:hover {
-  background: #e2eccf;
-  color: #173822;
+.sidebar-rail-toggle:hover {
+  background: #e4ecda;
+  color: #153a23;
 }
+/* When sidebar collapses, button slides to left:0 */
+.sidebar-collapsed .sidebar-rail-toggle {
+  left: 0;
+}
+
 .main {
-  transition: margin-left 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: margin-left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 .sidebar-collapsed .sidebar {
   transform: translateX(-100%);
@@ -52,25 +72,20 @@
 .sidebar-collapsed .main {
   margin-left: 0 !important;
 }
-.sidebar-toggle-btn {
-  background: #f1f5f0;
-  border: 1px solid #dce4d5;
-  border-radius: 8px;
-  padding: 7px 9px;
-  color: #28583e;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  transition: background 0.15s, color 0.15s;
-}
-.sidebar-toggle-btn:hover {
-  background: #e4ecda;
-  color: #153a23;
-}
 .sidebar-backdrop {
   display: none;
 }
+
+/* Narrower sidebar at 1100px */
+@media (max-width: 1100px) {
+  .sidebar-rail-toggle {
+    left: 195px;
+  }
+  .sidebar-collapsed .sidebar-rail-toggle {
+    left: 0;
+  }
+}
+
 @media (max-width: 760px) {
   .sidebar {
     position: fixed;
@@ -87,6 +102,16 @@
     transform: translateX(-100%);
     box-shadow: 0 0 35px rgba(0,0,0,0.25);
     z-index: 100;
+  }
+  /* On mobile sidebar starts collapsed; toggle is at left:0 */
+  .sidebar-rail-toggle {
+    left: 0;
+    top: 14px;
+  }
+  /* When mobile sidebar opens, toggle moves to right edge of drawer */
+  .sidebar.open ~ .sidebar-rail-toggle,
+  .app.sidebar-open .sidebar-rail-toggle {
+    left: 275px;
   }
   .sidebar.open {
     transform: translateX(0) !important;

@@ -254,15 +254,6 @@ export function App() {
               YantraSetu<small>{t('growingTogether')}</small>
             </span>
           </a>
-          <button
-            type="button"
-            className="icon sidebar-collapse-btn"
-            aria-label="Collapse sidebar"
-            onClick={() => setSidebarOpen(false)}
-            title="Collapse sidebar"
-          >
-            <PanelLeftClose size={18} />
-          </button>
         </div>
 
         <div className="workspace-label">{t('companion')}</div>
@@ -324,18 +315,20 @@ export function App() {
         </div>
       </aside>
 
+      {/* Single sidebar rail toggle — fixed to viewport, slides with sidebar */}
+      <button
+        type="button"
+        className="sidebar-rail-toggle"
+        aria-label={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
+        onClick={() => setSidebarOpen(!sidebarOpen)}
+        title={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
+      >
+        {sidebarOpen ? <PanelLeftClose size={17} /> : <Menu size={17} />}
+      </button>
+
       <div className="main">
         <header>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <button
-              type="button"
-              className="sidebar-toggle-btn"
-              aria-label={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
-              onClick={() => setSidebarOpen(!sidebarOpen)}
-              title={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
-            >
-              {sidebarOpen ? <PanelLeftClose size={19} /> : <Menu size={20} />}
-            </button>
             <div className="breadcrumb">
               YantraSetu <ChevronRight size={14} />
               <strong>{t(tab)}</strong>
