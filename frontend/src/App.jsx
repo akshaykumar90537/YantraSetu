@@ -1149,6 +1149,7 @@ function Workspace({ initialUser, onLogout, sharedLang, setSharedLang }) {
             {modal.type === 'rating' && (
               <RatingModal
                 booking={modal.b}
+                user={u}
                 lang={lang}
                 onSubmitDone={async (msg) => {
                   await load();

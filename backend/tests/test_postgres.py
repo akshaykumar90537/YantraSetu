@@ -339,4 +339,92 @@ def test_equipment_delisting_and_reactivation(database, monkeypatch):
     })
     assert book_success.status_code == 200
 
+def test_mutual_rating_and_booking_fields(database, monkeypatch):
+    from contextlib import contextmanager
+    from datetime import datetime, timezone, timedelta
+    from uuid import uuid4
+    from psycopg.rows import dict_row
+    from fastapi.testclient import TestClient
+    from app import main
+    connect, farmer, machine, operator, owner = database
+    @contextmanager
+    def isolated_db():
+        with connect() as c:
+            c.row_factory = dict_row
+            yield c
+    monkeypatch.setattr(main, 'db', isolated_db)
+    headers = {'X-Requested-With': 'YantraSetu', 'Origin': 'http://localhost:5173'}
+
+    with connect() as c:
+        c.execute("UPDATE users SET roles=ARRAY['owner'] WHERE id=%s", (owner,))
+        c.execute("UPDATE users SET roles=ARRAY['farmer'] WHERE id=%s", (farmer,))
+
+    owner_client = TestClient(main.app, headers=headers)
+    r_ch_o = owner_client.post('/api/auth/request', json={'phone': '+919000000002'}).json()
+    owner_client.post('/api/auth/verify', json={'challenge_id': r_ch_o['challenge_id'], 'code': r_ch_o['development_code']})
+
+    farmer_client = TestClient(main.app, headers=headers)
+    r_ch_f = farmer_client.post('/api/auth/request', json={'phone': '+919000000001'}).json()
+    farmer_client.post('/api/auth/verify', json={'challenge_id': r_ch_f['challenge_id'], 'code': r_ch_f['development_code']})
+
+    # Farmer requests booking
+    start = (datetime.now(timezone.utc) + timedelta(hours=3)).isoformat()
+    end = (datetime.now(timezone.utc) + timedelta(hours=5)).isoformat()
+    b_res = farmer_client.post('/api/bookings', json={
+        'machine_id': str(machine),
+        'start_at': start,
+        'end_at': end,
+        'latitude': 30.0,
+        'longitude': 75.0,
+        'idempotency_key': str(uuid4())
+    })
+    assert b_res.status_code == 200
+    booking_id = b_res.json()['id']
+
+    # Owner views bookings: must include farmer_rating_avg and farmer_rating_count
+    owner_bookings = owner_client.get('/api/bookings').json()
+    target_b = next(b for b in owner_bookings if b['id'] == booking_id)
+    assert 'farmer_rating_avg' in target_b
+    assert 'farmer_rating_count' in target_b
+    assert target_b['farmer_rating_avg'] == 5.0
+    assert target_b['farmer_rating_count'] == 0
+
+    # Owner approves booking
+    appr_res = owner_client.post(f'/api/bookings/{booking_id}/action', json={'action': 'approve'})
+    assert appr_res.status_code == 200
+
+    # Check availability: approved slot is reserved
+    avail = farmer_client.get(f'/api/machines/{machine}/availability').json()
+    assert any(r['start_at'] is not None for r in avail['reserved'])
+
+    # Directly set to COMPLETED for rating test
+    with connect() as c:
+        c.execute("UPDATE bookings SET status='COMPLETED', actual_quantity=2, final_total=1300 WHERE id=%s", (booking_id,))
+
+    # Farmer rates Owner
+    f_rate = farmer_client.post(f'/api/bookings/{booking_id}/rating', json={
+        'score': 5,
+        'punctuality': 5,
+        'badges': ['Clean Machine', 'On-Time Arrival'],
+        'comment': 'Excellent service'
+    })
+    assert f_rate.status_code == 200
+
+    # Owner rates Farmer
+    o_rate = owner_client.post(f'/api/bookings/{booking_id}/rating', json={
+        'score': 4,
+        'punctuality': 5,
+        'badges': ['Prompt Payment', 'Cooperative'],
+        'comment': 'Good farmer'
+    })
+    assert o_rate.status_code == 200
+
+    # Check that owner's bookings now show updated farmer_rating_avg=4.0, count=1
+    updated_b = owner_client.get('/api/bookings').json()
+    ub = next(b for b in updated_b if b['id'] == booking_id)
+    assert ub['farmer_rating_avg'] == 4.0
+    assert ub['farmer_rating_count'] == 1
+    assert ub['owner_rating_avg'] == 5.0
+    assert ub['owner_rating_count'] == 1
+
 

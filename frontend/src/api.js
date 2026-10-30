@@ -105,6 +105,33 @@ function saveDemoMachines(machines) {
   } catch {}
 }
 
+function getDemoRatings() {
+  try {
+    const raw = localStorage.getItem('ys_demo_ratings');
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return [];
+}
+
+function saveDemoRatings(ratings) {
+  try {
+    localStorage.setItem('ys_demo_ratings', JSON.stringify(ratings));
+  } catch {}
+}
+
+function calculateRatingStats(targetId, ratings) {
+  const list = ratings || getDemoRatings();
+  const matching = list.filter((r) => r.target_id === targetId);
+  if (!matching.length) {
+    return { avg: 5.0, count: 0 };
+  }
+  const sum = matching.reduce((acc, r) => acc + Number(r.score || 5), 0);
+  return {
+    avg: Math.round((sum / matching.length) * 10) / 10,
+    count: matching.length,
+  };
+}
+
 function getStoredUser() {
   try {
     const raw = localStorage.getItem('ys_demo_user');
@@ -267,13 +294,62 @@ function handleDemoFallback(path, data, method) {
     return { ok: true };
   }
 
+  // Quote / pricing calculation fallback
+  if (path === '/quote') {
+    const machines = getDemoMachines();
+    const m = machines.find((x) => x.id === data.machine_id) || machines[0];
+    const s = new Date(data.start_at);
+    const e = new Date(data.end_at);
+    const diffHours = Math.max(0.5, (e.getTime() - s.getTime()) / (1000 * 60 * 60));
+    const quantity = m.unit === 'hour' ? diffHours : (Number(data.acres) || 1);
+    const rate = Number(m.rate || 0);
+    const base_rental = Math.round(quantity * rate * 100) / 100;
+
+    let addons_rate = 0;
+    if (Array.isArray(data.selected_attachments)) {
+      for (const a of data.selected_attachments) {
+        addons_rate += Number(a.rate || 0);
+      }
+    }
+    if (data.fuel_included && m.fuel_rate_extra) {
+      addons_rate += Number(m.fuel_rate_extra || 0);
+    }
+    const addons = Math.round(quantity * addons_rate * 100) / 100;
+    const mobilization = Number(m.mobilization || 0);
+    const total = Math.round((base_rental + addons + mobilization) * 100) / 100;
+
+    return {
+      quantity: Math.round(quantity * 100) / 100,
+      unit: m.unit,
+      rate,
+      base_rental,
+      addons,
+      addons_rate,
+      mobilization,
+      total,
+      payment: 'Directly to owner outside platform',
+    };
+  }
+
   if (path.startsWith('/machines')) {
     const machines = getDemoMachines();
 
     // Availability endpoint
     if (path.includes('/availability')) {
+      const match = path.match(/\/machines\/([^/]+)\/availability/);
+      const machineId = match ? match[1] : '';
+      const bookings = JSON.parse(localStorage.getItem('ys_demo_bookings') || '[]');
+      const reserved = bookings
+        .filter((b) => b.machine_id === machineId && ['PENDING', 'APPROVED', 'IN_PROGRESS'].includes(b.status))
+        .map((b) => ({
+          start_at: b.start_at,
+          end_at: b.reserved_until || b.end_at,
+          reserved_until: b.reserved_until || b.end_at,
+          status: b.status,
+          quantity: b.quantity || 1,
+        }));
       return {
-        reserved: [],
+        reserved,
         maintenance: [],
         next_available: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
         buffer_minutes: 15,
@@ -344,24 +420,217 @@ function handleDemoFallback(path, data, method) {
     return machines.filter((m) => m.owner_id === user.id || m.owner_id === '00000000-0000-4000-8000-000000000002');
   }
 
-  if (path === '/bookings') {
+  // Booking action endpoint (approve / reject / cancel)
+  if (path.match(/\/bookings\/[^/]+\/action/)) {
+    const match = path.match(/\/bookings\/([^/]+)\/action/);
+    const bookingId = match ? match[1] : null;
+    const bookings = JSON.parse(localStorage.getItem('ys_demo_bookings') || '[]');
+    const bIndex = bookings.findIndex((b) => b.id === bookingId);
+    const act = data?.action;
+    const state = act === 'approve' ? 'APPROVED' : act === 'reject' ? 'REJECTED' : 'CANCELLED';
+    if (bIndex >= 0) {
+      bookings[bIndex].status = state;
+      localStorage.setItem('ys_demo_bookings', JSON.stringify(bookings));
+    }
+    return { status: state };
+  }
+
+  // Meter reading request & confirm endpoints
+  if (path.match(/\/bookings\/[^/]+\/meter\/(request|confirm)/)) {
+    const match = path.match(/\/bookings\/([^/]+)\/meter\/(request|confirm)/);
+    const bookingId = match ? match[1] : null;
+    const subAction = match ? match[2] : '';
+    const bookings = JSON.parse(localStorage.getItem('ys_demo_bookings') || '[]');
+    const bIndex = bookings.findIndex((b) => b.id === bookingId);
+    if (bIndex >= 0) {
+      if (subAction === 'request') {
+        const stage = data?.stage;
+        if (stage === 'start') {
+          bookings[bIndex].status = 'IN_PROGRESS';
+        } else if (stage === 'end') {
+          bookings[bIndex].status = 'COMPLETED';
+          bookings[bIndex].final_total = bookings[bIndex].estimate;
+        }
+      } else if (subAction === 'confirm') {
+        if (bookings[bIndex].status === 'APPROVED') {
+          bookings[bIndex].status = 'IN_PROGRESS';
+        } else {
+          bookings[bIndex].status = 'COMPLETED';
+          bookings[bIndex].final_total = bookings[bIndex].estimate;
+        }
+      }
+      localStorage.setItem('ys_demo_bookings', JSON.stringify(bookings));
+    }
+    return { ok: true, status: bookings[bIndex]?.status || 'COMPLETED' };
+  }
+
+  // Payment reporting endpoint
+  if (path.match(/\/bookings\/[^/]+\/payment-report/)) {
+    const match = path.match(/\/bookings\/([^/]+)\/payment-report/);
+    const bookingId = match ? match[1] : null;
+    const bookings = JSON.parse(localStorage.getItem('ys_demo_bookings') || '[]');
+    const bIndex = bookings.findIndex((b) => b.id === bookingId);
+    if (bIndex >= 0) {
+      bookings[bIndex].payment_status = data?.status || 'PAID_OUTSIDE_PLATFORM';
+      localStorage.setItem('ys_demo_bookings', JSON.stringify(bookings));
+    }
+    return { status: data?.status || 'PAID_OUTSIDE_PLATFORM', notice: 'Manually reported' };
+  }
+
+  // Ratings endpoint
+  if (path.match(/\/bookings\/[^/]+\/rating/)) {
+    const match = path.match(/\/bookings\/([^/]+)\/rating/);
+    const bookingId = match ? match[1] : null;
+    const bookings = JSON.parse(localStorage.getItem('ys_demo_bookings') || '[]');
+    const b = bookings.find((x) => x.id === bookingId);
+    const ratings = getDemoRatings();
+    const authorId = user ? user.id : 'demo-user';
+
     if (method === 'POST') {
-      const bookings = JSON.parse(localStorage.getItem('ys_demo_bookings') || '[]');
+      const targetId = b ? (authorId === b.farmer_id ? b.owner_id : b.farmer_id) : 'target-user';
+      const entry = {
+        booking_id: bookingId,
+        author_id: authorId,
+        target_id: targetId,
+        score: Number(data.score) || 5,
+        punctuality: Number(data.punctuality) || 5,
+        badges: data.badges || [],
+        comment: data.comment || '',
+        created_at: new Date().toISOString(),
+      };
+
+      const existingIdx = ratings.findIndex((r) => r.booking_id === bookingId && r.author_id === authorId);
+      if (existingIdx >= 0) {
+        ratings[existingIdx] = entry;
+      } else {
+        ratings.push(entry);
+      }
+      saveDemoRatings(ratings);
+
+      // Recalculate stats for machines if target is owner
+      if (b && targetId === b.owner_id) {
+        const ownerStats = calculateRatingStats(targetId, ratings);
+        const machines = getDemoMachines();
+        const updated = machines.map((m) => {
+          if (m.owner_id === targetId || m.id === b.machine_id) {
+            return { ...m, rating_avg: ownerStats.avg, rating_count: ownerStats.count };
+          }
+          return m;
+        });
+        saveDemoMachines(updated);
+      }
+
+      return { ok: true };
+    }
+
+    // GET rating
+    const found = ratings.find((r) => r.booking_id === bookingId && r.author_id === authorId);
+    return found || null;
+  }
+
+  // Invoice endpoint
+  if (path.match(/\/bookings\/[^/]+\/invoice/)) {
+    const match = path.match(/\/bookings\/([^/]+)\/invoice/);
+    const bookingId = match ? match[1] : null;
+    const bookings = JSON.parse(localStorage.getItem('ys_demo_bookings') || '[]');
+    const b = bookings.find((x) => x.id === bookingId) || {};
+    return {
+      invoice_number: 'YS-INV-' + String(bookingId || '00000000').slice(0, 8).toUpperCase(),
+      booking_id: bookingId,
+      owner_name: b.owner_name || 'Equipment Owner',
+      owner_phone: b.owner_phone || '+919000000002',
+      farmer_name: b.farmer_name || 'Farmer',
+      farmer_phone: b.farmer_phone || '+919876543210',
+      machine_name: b.machine_name || 'Farm Equipment',
+      machine_category: b.machine_category || 'Machinery',
+      village: b.village || 'Punjab Hub',
+      rate: b.rate || 500,
+      unit: b.unit || 'hour',
+      mobilization: b.mobilization || 0,
+      base_rental: b.estimate || 1500,
+      addons: 0,
+      final_total: b.final_total || b.estimate || 1500,
+      actual_quantity: b.quantity || 2,
+      completed_at: new Date().toISOString(),
+      payment_status: b.payment_status || 'UNPAID',
+    };
+  }
+
+  if (path === '/bookings') {
+    const bookings = JSON.parse(localStorage.getItem('ys_demo_bookings') || '[]');
+    const machines = getDemoMachines();
+    const ratings = getDemoRatings();
+
+    if (method === 'POST') {
+      const m = machines.find((x) => x.id === data.machine_id) || machines[0];
+      const s = new Date(data.start_at);
+      const e = new Date(data.end_at);
+      const diffHours = Math.max(0.5, (e.getTime() - s.getTime()) / (1000 * 60 * 60));
+      const quantity = m.unit === 'hour' ? diffHours : (Number(data.acres) || 1);
+
+      let addons_rate = 0;
+      if (Array.isArray(data.selected_attachments)) {
+        for (const a of data.selected_attachments) {
+          addons_rate += Number(a.rate || 0);
+        }
+      }
+      if (data.fuel_included && m.fuel_rate_extra) {
+        addons_rate += Number(m.fuel_rate_extra || 0);
+      }
+      const estimate = Math.round(((Number(m.rate || 0) + addons_rate) * quantity + Number(m.mobilization || 0)) * 100) / 100;
+
+      const farmerId = user ? user.id : '00000000-0000-4000-8000-000000000001';
+      const farmerStats = calculateRatingStats(farmerId, ratings);
+      const ownerStats = calculateRatingStats(m.owner_id, ratings);
+
       const newBooking = {
         id: '20000000-0000-4000-8000-' + String(Date.now()).slice(-12),
-        machine_id: data.machine_id,
-        farmer_id: user ? user.id : '00000000-0000-4000-8000-000000000001',
+        machine_id: m.id,
+        machine_name: m.name,
+        machine_category: m.category,
+        village: m.village,
+        owner_id: m.owner_id,
+        owner_name: m.owner_name || 'Harpreet Singh (Owner)',
+        owner_phone: m.owner_phone || '+919000000002',
+        farmer_id: farmerId,
+        farmer_name: user ? user.name : 'Gurpreet Singh (Farmer)',
+        farmer_phone: user ? (user.phone || user.email) : '+919876543210',
+        farmer_rating_avg: farmerStats.avg,
+        farmer_rating_count: farmerStats.count,
+        owner_rating_avg: ownerStats.avg,
+        owner_rating_count: ownerStats.count,
         status: 'PENDING',
+        payment_status: 'UNPAID',
         start_at: data.start_at,
         end_at: data.end_at,
-        estimate: 1500,
+        reserved_until: new Date(new Date(data.end_at).getTime() + (m.buffer_minutes || 15) * 60000).toISOString(),
+        quantity: Math.round(quantity * 100) / 100,
+        rate: m.rate,
+        unit: m.unit,
+        mobilization: m.mobilization,
+        estimate,
+        selected_attachments: data.selected_attachments || [],
+        fuel_included: !!data.fuel_included,
+        created_at: new Date().toISOString(),
         ...data,
       };
-      bookings.push(newBooking);
+      bookings.unshift(newBooking);
       localStorage.setItem('ys_demo_bookings', JSON.stringify(bookings));
       return newBooking;
     }
-    return JSON.parse(localStorage.getItem('ys_demo_bookings') || '[]');
+
+    // Return bookings enriched with live ratings
+    return bookings.map((b) => {
+      const farmerStats = calculateRatingStats(b.farmer_id, ratings);
+      const ownerStats = calculateRatingStats(b.owner_id, ratings);
+      return {
+        ...b,
+        farmer_rating_avg: farmerStats.avg,
+        farmer_rating_count: farmerStats.count,
+        owner_rating_avg: ownerStats.avg,
+        owner_rating_count: ownerStats.count,
+      };
+    });
   }
 
   if (path === '/notifications' || path === '/organizations') {

@@ -4,7 +4,7 @@ import { FormField } from './Common';
 import { api } from '../api';
 import { translate } from '../locales';
 
-const BADGE_OPTIONS = [
+const OWNER_BADGES = [
   'Clean Machine',
   'Experienced Driver',
   'Full Tank',
@@ -13,14 +13,25 @@ const BADGE_OPTIONS = [
   'Well Maintained',
 ];
 
-export function RatingModal({ booking: b, onSubmitDone, lang = 'en' }) {
+const FARMER_BADGES = [
+  'Prompt Payment',
+  'Clear Instructions',
+  'Good Field Conditions',
+  'Cooperative',
+  'Respectful Operator Care',
+  'Would Rent Again',
+];
+
+export function RatingModal({ booking: b, user: u, onSubmitDone, lang = 'en' }) {
   const t = (k, p) => translate(lang, k, p);
+  const isOwner = u && (u.id === b.owner_id);
+  const badgeOptions = isOwner ? FARMER_BADGES : OWNER_BADGES;
+
   const [score, setScore] = useState(5);
   const [punctuality, setPunctuality] = useState(5);
-  const [selectedBadges, setSelectedBadges] = useState([
-    'Clean Machine',
-    'Experienced Driver',
-  ]);
+  const [selectedBadges, setSelectedBadges] = useState(
+    isOwner ? ['Prompt Payment', 'Cooperative'] : ['Clean Machine', 'On-Time Arrival']
+  );
   const [comment, setComment] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
@@ -56,7 +67,7 @@ export function RatingModal({ booking: b, onSubmitDone, lang = 'en' }) {
         badges: selectedBadges,
         comment,
       });
-      onSubmitDone('Rating & review saved successfully!');
+      onSubmitDone(isOwner ? 'Farmer rating submitted successfully!' : 'Owner & equipment review saved!');
     } catch {
       setSubmitting(false);
     }
@@ -69,8 +80,14 @@ export function RatingModal({ booking: b, onSubmitDone, lang = 'en' }) {
           <Sparkles size={20} />
         </div>
         <div>
-          <h2 style={{ margin: 0, fontSize: '18px', color: '#1e293b' }}>{t('rateCompletedTitle')}</h2>
-          <small style={{ color: '#64748b' }}>{b.machine_name} · {b.village}</small>
+          <h2 style={{ margin: 0, fontSize: '18px', color: '#1e293b' }}>
+            {isOwner ? 'Rate Farmer / Rental Experience' : t('rateCompletedTitle')}
+          </h2>
+          <small style={{ color: '#64748b' }}>
+            {isOwner
+              ? `Farmer: ${b.farmer_name || 'Farmer'} (${b.farmer_phone || ''})`
+              : `Owner: ${b.owner_name || 'Owner'} · ${b.machine_name} (${b.village})`}
+          </small>
         </div>
       </div>
 
@@ -79,7 +96,7 @@ export function RatingModal({ booking: b, onSubmitDone, lang = 'en' }) {
         {/* Overall Star Rating */}
         <div style={{ background: '#f8fafc', padding: '14px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
           <label style={{ fontSize: '13px', fontWeight: '700', color: '#334155', display: 'block', marginBottom: '8px' }}>
-            {t('ratingLabel')} (1 to 5 Stars)
+            {isOwner ? 'Farmer Reliability & Conduct (1 to 5 Stars)' : `${t('ratingLabel')} (1 to 5 Stars)`}
           </label>
           <div style={{ display: 'flex', gap: '8px' }}>
             {[1, 2, 3, 4, 5].map((star) => (
@@ -109,19 +126,19 @@ export function RatingModal({ booking: b, onSubmitDone, lang = 'en' }) {
           </div>
         </div>
 
-        {/* Operator Punctuality Rating */}
+        {/* Punctuality Rating */}
         <div style={{ background: '#f8fafc', padding: '14px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
           <label style={{ fontSize: '13px', fontWeight: '700', color: '#334155', display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
             <Clock size={15} color="#15803d" />
-            <span>{t('punctualityScore')} (Arrival & Timeliness)</span>
+            <span>{isOwner ? 'Timely Payment & Field Handover' : `${t('punctualityScore')} (Arrival & Timeliness)`}</span>
           </label>
           <div style={{ display: 'flex', gap: '6px' }}>
             {[
-              { val: 5, label: '5 - On Time' },
-              { val: 4, label: '4 - Minor Delay (<15m)' },
-              { val: 3, label: '3 - 30m Delay' },
-              { val: 2, label: '2 - 1hr Delay' },
-              { val: 1, label: '1 - Severe Delay' },
+              { val: 5, label: isOwner ? '5 - Prompt' : '5 - On Time' },
+              { val: 4, label: isOwner ? '4 - Quick' : '4 - <15m Delay' },
+              { val: 3, label: isOwner ? '3 - Moderate' : '3 - 30m Delay' },
+              { val: 2, label: isOwner ? '2 - Delayed' : '2 - 1hr Delay' },
+              { val: 1, label: isOwner ? '1 - Issues' : '1 - Severe Delay' },
             ].map((p) => {
               const active = punctuality === p.val;
               return (
@@ -149,14 +166,14 @@ export function RatingModal({ booking: b, onSubmitDone, lang = 'en' }) {
           </div>
         </div>
 
-        {/* Equipment Condition Badges Selection */}
+        {/* Badges Selection */}
         <div style={{ background: '#f8fafc', padding: '14px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
           <label style={{ fontSize: '13px', fontWeight: '700', color: '#334155', display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
             <ThumbsUp size={15} color="#2563eb" />
             <span>{t('conditionBadges')} (Tap badges that apply)</span>
           </label>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-            {BADGE_OPTIONS.map((badge) => {
+            {badgeOptions.map((badge) => {
               const isSelected = selectedBadges.includes(badge);
               return (
                 <button
@@ -196,7 +213,11 @@ export function RatingModal({ booking: b, onSubmitDone, lang = 'en' }) {
             maxLength="500"
             value={comment}
             onChange={(e) => setComment(e.target.value)}
-            placeholder="Share feedback on machine performance, operator conduct, field output..."
+            placeholder={
+              isOwner
+                ? "Share feedback on farmer's field readiness, timely payment, communication..."
+                : "Share feedback on machine performance, operator conduct, field output..."
+            }
             style={{
               width: '100%',
               padding: '8px 10px',

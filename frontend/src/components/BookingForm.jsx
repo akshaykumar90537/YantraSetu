@@ -12,6 +12,7 @@ export function BookingForm({ machine: m, online, busy, run, onDone, lang = 'en'
   const [availability, setAvailability] = useState(null);
   const [startVal, setStartVal] = useState('');
   const [endVal, setEndVal] = useState('');
+  const [acresVal, setAcresVal] = useState(m.unit === 'acre' ? '1.0' : '');
   const [farmLat, setFarmLat] = useState(String(m.latitude || 30.901));
   const [farmLon, setFarmLon] = useState(String(m.longitude || 75.857));
   const [showFarmMap, setShowFarmMap] = useState(false);
@@ -43,6 +44,53 @@ export function BookingForm({ machine: m, online, busy, run, onDone, lang = 'en'
     timeError = 'Please select booking start and end times.';
   }
 
+  function calculateLiveEstimate(sStr, eStr, aVal, atts, fuel) {
+    if (!sStr || !eStr) return null;
+    const s = new Date(sStr);
+    const e = new Date(eStr);
+    if (isNaN(s.getTime()) || isNaN(e.getTime()) || e.getTime() <= s.getTime()) return null;
+    const diffHours = (e.getTime() - s.getTime()) / (1000 * 60 * 60);
+    if (diffHours < 0.5) return null;
+
+    const quantity = m.unit === 'hour' ? Math.round(diffHours * 100) / 100 : (parseFloat(aVal) || 1);
+    const rate = Number(m.rate || 0);
+    const base_rental = Math.round(quantity * rate * 100) / 100;
+
+    let addons_rate = 0;
+    if (Array.isArray(atts)) {
+      for (const a of atts) {
+        addons_rate += Number(a.rate || 0);
+      }
+    }
+    if (fuel && m.fuel_rate_extra) {
+      addons_rate += Number(m.fuel_rate_extra || 0);
+    }
+    const addons = Math.round(quantity * addons_rate * 100) / 100;
+    const mobilization = Number(m.mobilization || 0);
+    const total = Math.round((base_rental + addons + mobilization) * 100) / 100;
+
+    return {
+      base_rental,
+      rental: base_rental + addons,
+      addons,
+      addons_rate,
+      mobilization,
+      total,
+      quantity,
+      unit: m.unit,
+      rate,
+      payment: 'Directly to owner outside platform',
+    };
+  }
+
+  // Automatically recalculate estimate whenever dates, acreage, attachments, or fuel change
+  useEffect(() => {
+    const est = calculateLiveEstimate(startVal, endVal, acresVal, selectedAttachments, fuelIncluded);
+    if (est) {
+      setQuote(est);
+    }
+  }, [startVal, endVal, acresVal, selectedAttachments, fuelIncluded, m.rate, m.mobilization, m.fuel_rate_extra, m.unit]);
+
   useEffect(() => {
     api('/machines/' + m.id + '/availability')
       .then((res) => {
@@ -50,7 +98,6 @@ export function BookingForm({ machine: m, online, busy, run, onDone, lang = 'en'
         if (res.next_available) {
           const s = new Date(res.next_available.start_at);
           const e = new Date(res.next_available.end_at);
-          const pad = (n) => String(n).padStart(2, '0');
           const fmt = (d) =>
             `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
           setStartVal(fmt(s));
@@ -66,7 +113,7 @@ export function BookingForm({ machine: m, online, busy, run, onDone, lang = 'en'
       machine_id: m.id,
       start_at: new Date(f.get('start')).toISOString(),
       end_at: new Date(f.get('end')).toISOString(),
-      acres: m.unit === 'acre' ? f.get('acres') : null,
+      acres: m.unit === 'acre' ? parseFloat(f.get('acres') || acresVal || '1') : null,
       latitude: Number(farmLat),
       longitude: Number(farmLon),
       idempotency_key: idempotencyKey,
@@ -78,11 +125,9 @@ export function BookingForm({ machine: m, online, busy, run, onDone, lang = 'en'
   function handleSelectSlot(startIsoLocal, endIsoLocal) {
     setStartVal(startIsoLocal);
     setEndVal(endIsoLocal);
-    setQuote(null);
   }
 
   function toggleAttachment(att) {
-    setQuote(null);
     if (selectedAttachments.some((a) => a.name === att.name)) {
       setSelectedAttachments(selectedAttachments.filter((a) => a.name !== att.name));
     } else {
@@ -109,7 +154,6 @@ export function BookingForm({ machine: m, online, busy, run, onDone, lang = 'en'
       />
 
       <form
-        onChange={() => setQuote(null)}
         onSubmit={(e) => {
           e.preventDefault();
           const d = payload(e.target);
@@ -141,7 +185,16 @@ export function BookingForm({ machine: m, online, busy, run, onDone, lang = 'en'
 
         {m.unit === 'acre' && (
           <FormField label={t('estimatedAcreage')}>
-            <input name="acres" type="number" step="0.001" min="0.001" max="10000" required />
+            <input
+              name="acres"
+              type="number"
+              step="0.001"
+              min="0.001"
+              max="10000"
+              value={acresVal}
+              onChange={(e) => setAcresVal(e.target.value)}
+              required
+            />
           </FormField>
         )}
 
@@ -205,10 +258,7 @@ export function BookingForm({ machine: m, online, busy, run, onDone, lang = 'en'
               <input
                 type="checkbox"
                 checked={fuelIncluded}
-                onChange={(e) => {
-                  setFuelIncluded(e.target.checked);
-                  setQuote(null);
-                }}
+                onChange={(e) => setFuelIncluded(e.target.checked)}
                 style={{ width: '16px', height: '16px', accentColor: '#ca8a04' }}
               />
               <Fuel size={16} />

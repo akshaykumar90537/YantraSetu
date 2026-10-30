@@ -701,7 +701,23 @@ def book(p:Booking,u=Depends(user)):
         notify(c,u['id'],f'Booking {ident} awaits owner approval')
         return row
 
-BOOKING_SELECT='''SELECT b.*,m.name AS machine_name,m.category AS machine_category,m.owner_id,m.village,u.name AS farmer_name,u.phone AS farmer_phone,ow.name AS owner_name,ow.phone AS owner_phone FROM bookings b JOIN machines m ON m.id=b.machine_id JOIN users u ON u.id=b.farmer_id JOIN users ow ON ow.id=m.owner_id'''
+BOOKING_SELECT='''SELECT b.*,
+m.name AS machine_name,
+m.category AS machine_category,
+m.owner_id,
+m.village,
+u.name AS farmer_name,
+u.phone AS farmer_phone,
+ow.name AS owner_name,
+ow.phone AS owner_phone,
+COALESCE((SELECT ROUND(AVG(r.score)::numeric, 1) FROM ratings r WHERE r.target_id=b.farmer_id), 5.0) AS farmer_rating_avg,
+COALESCE((SELECT COUNT(*) FROM ratings r WHERE r.target_id=b.farmer_id), 0) AS farmer_rating_count,
+COALESCE((SELECT ROUND(AVG(r.score)::numeric, 1) FROM ratings r WHERE r.target_id=m.owner_id), 5.0) AS owner_rating_avg,
+COALESCE((SELECT COUNT(*) FROM ratings r WHERE r.target_id=m.owner_id), 0) AS owner_rating_count
+FROM bookings b
+JOIN machines m ON m.id=b.machine_id
+JOIN users u ON u.id=b.farmer_id
+JOIN users ow ON ow.id=m.owner_id'''
 def booking_access(c,ident,u,lock=False):
     row=one(c,BOOKING_SELECT+' WHERE b.id=%s'+(' FOR UPDATE OF b' if lock else ''),(ident,))
     require(row is not None,'Booking not found',404)

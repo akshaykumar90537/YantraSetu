@@ -1,5 +1,5 @@
 import React from 'react';
-import { CalendarDays, IndianRupee, Wrench, Fuel, Star } from 'lucide-react';
+import { CalendarDays, IndianRupee, Wrench, Fuel, Star, User, ShieldCheck } from 'lucide-react';
 import { api } from '../api';
 import { INR, dt, translate } from '../locales';
 
@@ -84,18 +84,117 @@ export function BookingCard({ booking: b, user: u, busy, run, load, setModal, no
         </div>
       )}
 
+      {/* Farmer Profile & Overall Rating Box for Equipment Owner */}
+      {owner ? (
+        <div style={{
+          background: b.status === 'PENDING' ? '#f0fdf4' : '#f8fafc',
+          border: b.status === 'PENDING' ? '1.5px solid #86efac' : '1px solid #e2e8f0',
+          borderRadius: '8px',
+          padding: '10px 12px',
+          margin: '10px 0',
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '6px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <User size={16} color="#15803d" />
+              <span style={{ fontWeight: '700', fontSize: '13px', color: '#1e293b' }}>
+                {t('farmerLabel')}: {b.farmer_name || 'Farmer'}
+              </span>
+              {b.farmer_phone && (
+                <span style={{ fontSize: '12px', color: '#64748b' }}>
+                  ({b.farmer_phone})
+                </span>
+              )}
+            </div>
+
+            {/* Farmer Overall Rating Badge */}
+            <div style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '4px',
+              background: '#fef3c7',
+              border: '1px solid #fde68a',
+              borderRadius: '6px',
+              padding: '2px 8px',
+              fontSize: '12px',
+              fontWeight: '700',
+              color: '#92400e',
+            }}>
+              <Star size={13} fill="#f59e0b" color="#d97706" />
+              <span>{Number(b.farmer_rating_avg || 5.0).toFixed(1)}</span>
+              <span style={{ fontSize: '11px', color: '#b45309', fontWeight: '500' }}>
+                ({b.farmer_rating_count || 0} reviews)
+              </span>
+            </div>
+          </div>
+
+          {b.status === 'PENDING' && (
+            <div style={{ fontSize: '12px', color: '#166534', marginTop: '6px', fontWeight: '600' }}>
+              ⭐ Check farmer rating above and approve to rent out equipment for this time slot.
+            </div>
+          )}
+          {['APPROVED', 'IN_PROGRESS'].includes(b.status) && (
+            <div style={{ fontSize: '12px', color: '#0369a1', marginTop: '4px', fontWeight: '500' }}>
+              🔒 Equipment slot automatically delisted & reserved for this booking period.
+            </div>
+          )}
+        </div>
+      ) : (
+        <div style={{
+          background: '#f8fafc',
+          border: '1px solid #e2e8f0',
+          borderRadius: '8px',
+          padding: '10px 12px',
+          margin: '10px 0',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: '6px',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <User size={16} color="#2563eb" />
+            <span style={{ fontWeight: '700', fontSize: '13px', color: '#1e293b' }}>
+              Owner: {b.owner_name || 'Equipment Owner'}
+            </span>
+            {b.owner_phone && (
+              <span style={{ fontSize: '12px', color: '#64748b' }}>
+                ({b.owner_phone})
+              </span>
+            )}
+          </div>
+          <div style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '4px',
+            background: '#fef3c7',
+            border: '1px solid #fde68a',
+            borderRadius: '6px',
+            padding: '2px 8px',
+            fontSize: '12px',
+            fontWeight: '700',
+            color: '#92400e',
+          }}>
+            <Star size={13} fill="#f59e0b" color="#d97706" />
+            <span>{Number(b.owner_rating_avg || 5.0).toFixed(1)}</span>
+            <span style={{ fontSize: '11px', color: '#b45309', fontWeight: '500' }}>
+              ({b.owner_rating_count || 0} reviews)
+            </span>
+          </div>
+        </div>
+      )}
+
       <p className="caption">
-        {t('farmerLabel')}: {b.farmer_name} · {paymentLabel} — manually reported, not independently verified.
+        {paymentLabel} — manually reported, not independently verified.
       </p>
 
       <div className="actions">
         {owner && b.status === 'PENDING' && (
           <>
             <button className="primary" disabled={busy} onClick={() => action('approve')}>
-              {t('acceptBtn')}
+              ✓ {t('acceptBtn')} & Rent Out
             </button>
             <button className="outline" disabled={busy} onClick={() => action('reject')}>
-              {t('rejectBtn')}
+              ✗ {t('rejectBtn')}
             </button>
           </>
         )}
@@ -165,7 +264,7 @@ export function BookingCard({ booking: b, user: u, busy, run, load, setModal, no
                   style={{ display: 'flex', alignItems: 'center', gap: '4px' }}
                 >
                   <Star size={14} color="#f59e0b" fill="#f59e0b" />
-                  <span>{t('rateExperienceBtn')}</span>
+                  <span>{owner ? 'Rate Farmer' : 'Rate Owner & Equipment'}</span>
                 </button>
               </>
             )}
