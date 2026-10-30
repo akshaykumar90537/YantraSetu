@@ -8,8 +8,10 @@
 
 .mobile-auth{display:none}@media(max-width:760px){.mobile-auth{display:inline-flex}}
 
-/* Sidebar Toggle & Responsive Drawer Enhancements */
+/* Sidebar Layout, Header & Toggle */
 .sidebar {
+  width: 250px;
+  padding: 26px 16px 20px;
   transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   z-index: 20;
   overflow-y: auto;
@@ -25,45 +27,91 @@
 .sidebar-header {
   display: flex;
   align-items: center;
-  justify-content: flex-start;
+  justify-content: space-between;
   width: 100%;
+  gap: 8px;
 }
-
-/*
-  Single rail toggle — fixed to viewport, tracks the sidebar right edge.
-  Open  (default): left = sidebar width (236px)
-  Closed (.sidebar-collapsed): left = 0
-  Transition matches the sidebar slide animation.
-*/
-.sidebar-rail-toggle {
-  position: fixed;
-  top: 24px;
-  left: 236px;
-  width: 30px;
-  height: 34px;
-  background: #fff;
+.sidebar-header .brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.8px;
+  padding: 0;
+  min-width: 0;
+  flex: 1;
+}
+.sidebar-header .brand-mark {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  background: var(--green);
+  color: #e2ecb4;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.sidebar-header .brand-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.15;
+}
+.sidebar-header .brand small {
+  display: block;
+  letter-spacing: 1.4px;
+  font-size: 7px;
+  margin-top: 4px;
+  color: #829080;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+.sidebar-toggle-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: #f4f6ef;
   border: 1px solid #dce4d5;
-  border-left: none;
-  border-radius: 0 8px 8px 0;
-  box-shadow: 3px 0 8px rgba(40,88,62,0.12);
-  color: #28583e;
-  cursor: pointer;
+  color: #385b40;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  z-index: 30;
-  transition: left 0.3s cubic-bezier(0.4, 0, 0.2, 1), background 0.15s, color 0.15s;
+  cursor: pointer;
+  flex-shrink: 0;
+  padding: 0;
+  transition: all 0.18s ease;
 }
-.sidebar-rail-toggle:hover {
+.sidebar-toggle-btn:hover {
   background: #e4ecda;
-  color: #153a23;
+  color: #193f26;
+  border-color: #cbd7c0;
 }
-/* When sidebar collapses, button slides to left:0 */
-.sidebar-collapsed .sidebar-rail-toggle {
-  left: 0;
+.sidebar-open-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  background: #ffffff;
+  border: 1px solid #dce4d5;
+  color: #28583e;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(40, 88, 62, 0.08);
+  transition: all 0.18s ease;
+  padding: 0;
+  flex-shrink: 0;
+}
+.sidebar-open-btn:hover {
+  background: #edf3e9;
+  color: #153a23;
+  border-color: #cbd7c0;
 }
 
 .main {
+  margin-left: 250px;
   transition: margin-left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 .sidebar-collapsed .sidebar {
@@ -78,11 +126,12 @@
 
 /* Narrower sidebar at 1100px */
 @media (max-width: 1100px) {
-  .sidebar-rail-toggle {
-    left: 195px;
+  .sidebar {
+    width: 230px;
+    padding: 24px 14px;
   }
-  .sidebar-collapsed .sidebar-rail-toggle {
-    left: 0;
+  .main {
+    margin-left: 230px;
   }
 }
 
@@ -102,16 +151,6 @@
     transform: translateX(-100%);
     box-shadow: 0 0 35px rgba(0,0,0,0.25);
     z-index: 100;
-  }
-  /* On mobile sidebar starts collapsed; toggle is at left:0 */
-  .sidebar-rail-toggle {
-    left: 0;
-    top: 14px;
-  }
-  /* When mobile sidebar opens, toggle moves to right edge of drawer */
-  .sidebar.open ~ .sidebar-rail-toggle,
-  .app.sidebar-open .sidebar-rail-toggle {
-    left: 275px;
   }
   .sidebar.open {
     transform: translateX(0) !important;

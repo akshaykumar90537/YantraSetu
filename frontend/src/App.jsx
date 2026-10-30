@@ -266,12 +266,21 @@ function Workspace({ initialUser, onLogout }) {
             }}
           >
             <span className="brand-mark">
-              <Sprout size={25} />
+              <Sprout size={24} />
             </span>
-            <span>
+            <span className="brand-text">
               YantraSetu<small>{t('growingTogether')}</small>
             </span>
           </a>
+          <button
+            type="button"
+            className="sidebar-toggle-btn"
+            aria-label="Collapse sidebar"
+            onClick={() => setSidebarOpen(false)}
+            title="Collapse sidebar"
+          >
+            <PanelLeftClose size={18} />
+          </button>
         </div>
 
         <div className="workspace-label">{t('companion')}</div>
@@ -333,20 +342,20 @@ function Workspace({ initialUser, onLogout }) {
         </div>
       </aside>
 
-      {/* Single sidebar rail toggle — fixed to viewport, slides with sidebar */}
-      <button
-        type="button"
-        className="sidebar-rail-toggle"
-        aria-label={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
-        onClick={() => setSidebarOpen(!sidebarOpen)}
-        title={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
-      >
-        {sidebarOpen ? <PanelLeftClose size={17} /> : <Menu size={17} />}
-      </button>
-
       <div className="main">
         <header>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            {!sidebarOpen && (
+              <button
+                type="button"
+                className="sidebar-open-btn"
+                aria-label="Expand sidebar"
+                onClick={() => setSidebarOpen(true)}
+                title="Expand sidebar"
+              >
+                <PanelLeftOpen size={18} />
+              </button>
+            )}
             <div className="breadcrumb">
               YantraSetu <ChevronRight size={14} />
               <strong>{t(tab)}</strong>
