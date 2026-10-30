@@ -14,6 +14,7 @@ import {
 import { LoginForm } from './LoginForm';
 import { TractorArt } from './TractorArt';
 import { translate } from '../locales';
+import { HomePage } from './HomePage';
 
 export function LandingPage({ onUser, lang, setLang }) {
   const [showLogin, setShowLogin] = useState(false);
@@ -74,8 +75,9 @@ export function LandingPage({ onUser, lang, setLang }) {
   ];
 
   return (
-    <div className="landing">
+    <div className={lang === 'en' ? 'home-entry' : 'landing'}>
       {/* ─── Top Navigation Bar ─── */}
+      {lang === 'en' ? <HomePage onSignIn={() => setShowLogin(true)} lang={lang} setLang={setLang} /> : <>
       <header className="landing-nav">
         <a className="brand" href="#" onClick={(e) => e.preventDefault()}>
           <span className="brand-mark">
@@ -201,6 +203,8 @@ export function LandingPage({ onUser, lang, setLang }) {
           <Sprout size={16} /> {t('footerTagline')}
         </span>
       </footer>
+
+      </>}
 
       {/* ─── Login Modal ─── */}
       {showLogin && (
