@@ -21,6 +21,7 @@ export function MapPicker({
   const circleRef = useRef(null);
   const machineMarkersRef = useRef([]);
   const [locating, setLocating] = useState(false);
+  const [locateNotice, setLocateNotice] = useState('');
   const [locateError, setLocateError] = useState('');
 
   const t = (k, p) => translate(lang, k, p);
@@ -219,33 +220,73 @@ export function MapPicker({
     });
   }, [machines, lang]);
 
-  // "Use My Location" Geolocation Handler
-  function handleUseMyLocation() {
-    if (!navigator.geolocation) {
-      setLocateError('Geolocation is not supported by your browser');
-      return;
+  function applyLocation(latitude, longitude, sourceMsg) {
+    setLocating(false);
+    setLocateError('');
+    if (sourceMsg) {
+      setLocateNotice(sourceMsg);
+      setTimeout(() => setLocateNotice(''), 5000);
     }
+    const latStr = Number(latitude).toFixed(5);
+    const lonStr = Number(longitude).toFixed(5);
+    if (onSelectLocation) {
+      onSelectLocation(latStr, lonStr);
+    }
+    if (mapRef.current) {
+      mapRef.current.flyTo([Number(latitude), Number(longitude)], 13);
+    }
+  }
+
+  // Robust Multi-tier Location Resolver (handles desktop/wifi without GPS chip)
+  function handleUseMyLocation() {
     setLocating(true);
     setLocateError('');
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        setLocating(false);
-        const { latitude, longitude } = position.coords;
-        const latStr = latitude.toFixed(5);
-        const lonStr = longitude.toFixed(5);
-        if (onSelectLocation) {
-          onSelectLocation(latStr, lonStr);
-        }
-        if (mapRef.current) {
-          mapRef.current.flyTo([latitude, longitude], 13);
-        }
-      },
-      (err) => {
-        setLocating(false);
-        setLocateError(err.message || 'Unable to retrieve location');
-      },
-      { timeout: 10000, enableHighAccuracy: true }
-    );
+    setLocateNotice('');
+
+    // Strategy 1: Browser standard location (enableHighAccuracy: false avoids hardware GPS satellite spin/timeout)
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const { latitude, longitude } = position.coords;
+          applyLocation(latitude, longitude, '📍 Location found via device');
+        },
+        (geoErr) => {
+          // Strategy 2: If browser times out or is denied on desktop, resolve via network IP
+          fetch('https://ipwho.is/')
+            .then((r) => r.json())
+            .then((data) => {
+              if (data && data.success && data.latitude && data.longitude) {
+                applyLocation(
+                  data.latitude,
+                  data.longitude,
+                  `📍 Located near ${data.city || data.region || 'India'} (network)`
+                );
+              } else {
+                throw new Error('IP locate failed');
+              }
+            })
+            .catch(() => {
+              // Strategy 3: Graceful fallback to default Ludhiana hub
+              applyLocation(30.901, 75.857, '📍 Centered on Punjab hub (Ludhiana)');
+            });
+        },
+        { timeout: 4000, enableHighAccuracy: false, maximumAge: 300000 }
+      );
+    } else {
+      // Browser does not support geolocation
+      fetch('https://ipwho.is/')
+        .then((r) => r.json())
+        .then((data) => {
+          if (data && data.success && data.latitude && data.longitude) {
+            applyLocation(data.latitude, data.longitude, `📍 Located near ${data.city || 'India'}`);
+          } else {
+            throw new Error();
+          }
+        })
+        .catch(() => {
+          applyLocation(30.901, 75.857, '📍 Centered on Punjab hub (Ludhiana)');
+        });
+    }
   }
 
   return (
@@ -253,7 +294,7 @@ export function MapPicker({
       <div ref={mapContainerRef} style={{ width: '100%', height }} />
 
       {showLocate && (
-        <div style={{ position: 'absolute', top: '12px', right: '12px', zIndex: 1000, display: 'flex', flexDirection: 'column', gap: '6px' }}>
+        <div style={{ position: 'absolute', top: '12px', right: '12px', zIndex: 1000, display: 'flex', flexDirection: 'column', gap: '6px', alignItems: 'flex-end' }}>
           <button
             type="button"
             className="map-locate-btn"
@@ -278,8 +319,33 @@ export function MapPicker({
             <Navigation size={15} className={locating ? 'animate-spin' : ''} />
             <span>{locating ? 'Locating…' : 'Use My GPS Location'}</span>
           </button>
+          {locateNotice && (
+            <span style={{
+              background: '#dcfce7',
+              color: '#166534',
+              border: '1px solid #86efac',
+              fontSize: '11px',
+              fontWeight: '500',
+              padding: '4px 8px',
+              borderRadius: '6px',
+              maxWidth: '240px',
+              boxShadow: '0 2px 6px rgba(0,0,0,0.1)',
+            }}>
+              {locateNotice}
+            </span>
+          )}
           {locateError && (
-            <span style={{ background: '#fee2e2', color: '#991b1b', fontSize: '11px', padding: '4px 8px', borderRadius: '4px', maxWidth: '200px' }}>
+            <span style={{
+              background: '#fee2e2',
+              color: '#991b1b',
+              border: '1px solid #fca5a5',
+              fontSize: '11px',
+              fontWeight: '500',
+              padding: '4px 8px',
+              borderRadius: '6px',
+              maxWidth: '240px',
+              boxShadow: '0 2px 6px rgba(0,0,0,0.1)',
+            }}>
               {locateError}
             </span>
           )}
