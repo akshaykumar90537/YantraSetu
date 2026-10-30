@@ -215,3 +215,4 @@ export function RatingModal({ booking: b, onSubmitDone, lang = 'en' }) {
     </div>
   );
 }
+

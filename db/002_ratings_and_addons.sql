@@ -16,3 +16,4 @@ ALTER TABLE bookings ADD COLUMN IF NOT EXISTS fuel_included boolean NOT NULL DEF
 ALTER TABLE bookings ADD COLUMN IF NOT EXISTS fuel_extra numeric(12,2) NOT NULL DEFAULT 0 CHECK (fuel_extra >= 0);
 
 INSERT INTO schema_versions(version) VALUES (2) ON CONFLICT (version) DO NOTHING;
+
