@@ -21,6 +21,7 @@ import {
   Menu,
   PanelLeftClose,
   PanelLeftOpen,
+  CloudSun,
 } from 'lucide-react';
 import { api } from './api';
 import { dict, INR, dt, translate } from './locales';
@@ -36,7 +37,7 @@ import { ConfirmMeter } from './components/ConfirmMeter';
 import { Invoice } from './components/Invoice';
 import { MapPicker } from './components/MapPicker';
 import { RatingModal } from './components/RatingModal';
-import { WeatherWidget } from './components/WeatherWidget';
+import { WeatherDashboard } from './components/WeatherDashboard';
 import './style.css';
 
 export function App() {
@@ -203,6 +204,7 @@ export function App() {
   const nav = [
     ['explore', Search, t('explore')],
     ['bookings', CalendarDays, t('bookings')],
+    ['weather', CloudSun, t('weatherTab')],
     ...(u?.roles.includes('owner')
       ? [
           ['fleet', Tractor, t('fleet')],
@@ -282,9 +284,6 @@ export function App() {
             </button>
           ))}
         </nav>
-
-        {/* Real-time Field Weather & Agricultural Advisory */}
-        <WeatherWidget latitude={lat} longitude={lon} lang={lang} />
 
         <div className="sidebar-note">
           <Sprout size={26} />
@@ -613,6 +612,16 @@ export function App() {
                 </button>
               </section>
             </>
+          ) : tab === 'weather' ? (
+            <WeatherDashboard
+              latitude={lat}
+              longitude={lon}
+              onSelectLocation={(newLat, newLon) => {
+                setLat(newLat);
+                setLon(newLon);
+              }}
+              lang={lang}
+            />
           ) : (
             <>
               <div className="section-title">
