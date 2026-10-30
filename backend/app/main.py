@@ -13,17 +13,26 @@ from app.domain import bill, meter_quantity, optimize, find_next_available_slot
 from app.sms import provider
 
 app=FastAPI(title='YantraSetu',version='0.1.0')
-ORIGIN=os.getenv('FRONTEND_ORIGIN','http://localhost:5173')
+_origins_raw=os.getenv('FRONTEND_ORIGIN','http://localhost:5173')
+ALLOWED_ORIGINS=set(o.strip() for o in _origins_raw.split(',') if o.strip())
+if os.getenv('VERCEL_URL'):
+    ALLOWED_ORIGINS.add(f"https://{os.getenv('VERCEL_URL')}")
+if os.getenv('VERCEL_PROJECT_PRODUCTION_URL'):
+    ALLOWED_ORIGINS.add(f"https://{os.getenv('VERCEL_PROJECT_PRODUCTION_URL')}")
+ORIGIN=next(iter(ALLOWED_ORIGINS)) if ALLOWED_ORIGINS else 'http://localhost:5173'
 SECRET=os.environ.get('OTP_SECRET','')
 if len(SECRET)<32: raise RuntimeError('Set OTP_SECRET to at least 32 random characters')
 DEV=os.getenv('APP_ENV','development')=='development'
 provider() # fail closed until a live adapter is implemented
-app.add_middleware(CORSMiddleware,allow_origins=[ORIGIN],allow_credentials=True,allow_methods=['GET','POST','PATCH'],allow_headers=['Content-Type','X-Requested-With'])
+app.add_middleware(CORSMiddleware,allow_origins=list(ALLOWED_ORIGINS),allow_credentials=True,allow_methods=['GET','POST','PATCH'],allow_headers=['Content-Type','X-Requested-With'])
 
 @app.middleware('http')
 async def safety_headers(request,call_next):
     if request.method in ('POST','PATCH','DELETE','PUT'):
-        if request.headers.get('x-requested-with')!='YantraSetu' or request.headers.get('origin',ORIGIN)!=ORIGIN:
+        req_origin=request.headers.get('origin')
+        if request.headers.get('x-requested-with')!='YantraSetu':
+            return Response('Invalid request origin',403)
+        if req_origin and req_origin not in ALLOWED_ORIGINS:
             return Response('Invalid request origin',403)
     response=await call_next(request)
     response.headers['X-Content-Type-Options']='nosniff'
