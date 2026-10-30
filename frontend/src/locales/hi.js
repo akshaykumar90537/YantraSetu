@@ -3,7 +3,6 @@ export const hi = {
   explore: 'मशीन खोजें',
   bookings: 'मेरी बुकिंग',
   fleet: 'मेरी मशीनें',
-  routes: 'यंत्रलिंक',
   org: 'FPO कार्यक्षेत्र',
   activity: 'सूचनाएं',
   sign: 'साइन इन / रजिस्टर',
@@ -50,12 +49,6 @@ export const hi = {
   noMachinerySub: 'अपना दायरा बढ़ाएं, स्थान बदलें, या अपनी मशीन पंजीकृत करें।',
   offlineBanner: 'ऑफ़लाइन · पुरानी खोज उपलब्ध है। ताज़ा उपलब्धता ऑनलाइन जांचें।',
 
-  // YantraLink Banner
-  meetYantraLink: 'यंत्रलिंक से मिलें',
-  yantraLinkTitle: 'कम सफ़र, खेत में ज़्यादा काम।',
-  yantraLinkSub: 'आस-पास की बुकिंग को एक सुव्यवस्थित दैनिक मार्ग में जोड़ें।',
-  exploreRoutes: 'मार्ग देखें',
-
   // Workspace
   workspaceEyebrow: 'आपका यंत्रसेतु कार्यक्षेत्र',
   workspaceSub: 'पारदर्शी रिकॉर्ड, स्पष्ट निर्णय, साझा समृद्धि।',
@@ -79,18 +72,6 @@ export const hi = {
   availabilityCol: 'उपलब्धता',
   calendarBtn: 'कैलेंडर',
   blockTimeBtn: 'मरम्मत हेतु रोकें',
-
-  // YantraLink Page
-  routeIntroTitle: 'अलग-अलग दौरों को एक साझा मार्ग में बदलें।',
-  routeIntroSub: 'यंत्रलिंक एक मशीन की स्वीकृत बुकिंग्स का सटीक मार्ग तय करता है। अधिकतम 8 कार्य।',
-  yourMachine: 'आपकी मशीन',
-  selectEquipment: 'उपकरण चुनें',
-  workingDay: 'कार्य दिवस · भारतीय समय',
-  calculateRouteBtn: 'मार्ग की गणना करें',
-  separateTripsEst: 'अलग-अलग फेरे · अनुमानित',
-  combinedRouteEst: 'संयुक्त मार्ग · अनुमानित',
-  potentialSaved: 'बचत की गई अनुमानित दूरी',
-  solverTime: 'गणना समय',
 
   // FPO
   fpoTitle: 'FPO / CHC संस्था का नाम',

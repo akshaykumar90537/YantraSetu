@@ -7,7 +7,6 @@ import {
   MapPin,
   CalendarDays,
   Tractor,
-  Route,
   Users,
   LogOut,
   Bell,
@@ -96,7 +95,6 @@ function Workspace({ initialUser, onLogout, sharedLang, setSharedLang }) {
   const [lon, setLon] = useState('75.857');
   const [cached, setCached] = useState(false);
   const [searched, setSearched] = useState(false);
-  const [routeResult, setRouteResult] = useState(null);
   const [drafts, setDrafts] = useState([]);
   const [showMap, setShowMap] = useState(true);
 
@@ -234,7 +232,6 @@ function Workspace({ initialUser, onLogout, sharedLang, setSharedLang }) {
     ...(u?.roles.includes('owner')
       ? [
           ['fleet', Tractor, t('fleet')],
-          ['routes', Route, t('routes')],
         ]
       : []),
     ...(u?.roles.includes('fpo') ? [['org', Users, t('org')]] : []),
@@ -244,6 +241,14 @@ function Workspace({ initialUser, onLogout, sharedLang, setSharedLang }) {
   function openBooking(m) {
     if (!u) {
       setModal({ type: 'login' });
+      return;
+    }
+    if (m.owner_id === u.id) {
+      setError('You cannot book your own equipment.');
+      return;
+    }
+    if (m.active === false || m.is_active === false) {
+      setError('This equipment is currently unavailable.');
       return;
     }
     setModal({ type: 'book', machine: m });
@@ -274,12 +279,21 @@ function Workspace({ initialUser, onLogout, sharedLang, setSharedLang }) {
             }}
           >
             <span className="brand-mark">
-              <Sprout size={25} />
+              <Sprout size={24} />
             </span>
-            <span>
+            <span className="brand-text">
               YantraSetu<small>{t('growingTogether')}</small>
             </span>
           </a>
+          <button
+            type="button"
+            className="sidebar-toggle-btn"
+            aria-label="Collapse sidebar"
+            onClick={() => setSidebarOpen(false)}
+            title="Collapse sidebar"
+          >
+            <PanelLeftClose size={18} />
+          </button>
         </div>
 
         <div className="workspace-label">{t('companion')}</div>
@@ -297,7 +311,6 @@ function Workspace({ initialUser, onLogout, sharedLang, setSharedLang }) {
             >
               <Icon size={19} />
               <span>{label}</span>
-              {key === 'routes' && <i>LINK</i>}
             </button>
           ))}
         </nav>
@@ -341,20 +354,20 @@ function Workspace({ initialUser, onLogout, sharedLang, setSharedLang }) {
         </div>
       </aside>
 
-      {/* Single sidebar rail toggle — fixed to viewport, slides with sidebar */}
-      <button
-        type="button"
-        className="sidebar-rail-toggle"
-        aria-label={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
-        onClick={() => setSidebarOpen(!sidebarOpen)}
-        title={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
-      >
-        {sidebarOpen ? <PanelLeftClose size={17} /> : <Menu size={17} />}
-      </button>
-
       <div className="main">
         <header>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            {!sidebarOpen && (
+              <button
+                type="button"
+                className="sidebar-open-btn"
+                aria-label="Expand sidebar"
+                onClick={() => setSidebarOpen(true)}
+                title="Expand sidebar"
+              >
+                <PanelLeftOpen size={18} />
+              </button>
+            )}
             <div className="breadcrumb">
               YantraSetu <ChevronRight size={14} />
               <strong>{t(tab)}</strong>
@@ -520,81 +533,129 @@ function Workspace({ initialUser, onLogout, sharedLang, setSharedLang }) {
                 </button>
               </form>
 
-              <div className="section-title">
-                <div>
-                  <div className="eyebrow muted">{t('nearSubtitle')}</div>
-                  <h2>{t('near')}</h2>
-                  <p>
-                    {cached
-                      ? t('cachedListings')
-                      : t('listingsCount', { count: machines.length, radius })}
-                  </p>
-                </div>
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  <button
-                    type="button"
-                    className={showMap ? 'primary' : 'outline'}
-                    onClick={() => setShowMap(!showMap)}
-                    style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
-                  >
-                    <MapPin size={16} />
-                    {showMap ? 'Hide Map' : 'Show Map'}
-                  </button>
-                  <button
-                    className="outline"
-                    onClick={() => (u ? setModal({ type: 'machine' }) : setModal({ type: 'login' }))}
-                  >
-                    <Plus size={16} /> {t('listMachine')}
-                  </button>
-                </div>
-              </div>
+              {(() => {
+                const visibleMachines = machines.filter(
+                  (m) => m.active !== false && m.is_active !== false && (!u || m.owner_id !== u.id)
+                );
+                return (
+                  <>
+                    {u?.roles?.includes('owner') && fleet.length > 0 && (
+                      <div style={{
+                        background: '#f0fdf4',
+                        border: '1px solid #bbf7d0',
+                        borderRadius: '12px',
+                        padding: '12px 18px',
+                        marginBottom: '20px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: '12px',
+                        fontSize: '13px',
+                        color: '#166534',
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <Tractor size={20} color="#15803d" />
+                          <span>
+                            You have <strong>{fleet.length}</strong> equipment listed in your fleet. <em>(Your own machinery is managed under the Fleet tab to prevent self-booking).</em>
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          className="outline"
+                          style={{
+                            fontSize: '12px',
+                            fontWeight: '600',
+                            padding: '6px 14px',
+                            borderColor: '#86efac',
+                            background: '#ffffff',
+                            color: '#166534',
+                            cursor: 'pointer',
+                            whiteSpace: 'nowrap'
+                          }}
+                          onClick={() => setTab('fleet')}
+                        >
+                          Manage Fleet →
+                        </button>
+                      </div>
+                    )}
+                    <div className="section-title">
+                      <div>
+                        <div className="eyebrow muted">{t('nearSubtitle')}</div>
+                        <h2>{t('near')}</h2>
+                        <p>
+                          {cached
+                            ? t('cachedListings')
+                            : t('listingsCount', { count: visibleMachines.length, radius })}
+                        </p>
+                      </div>
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <button
+                          type="button"
+                          className={showMap ? 'primary' : 'outline'}
+                          onClick={() => setShowMap(!showMap)}
+                          style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+                        >
+                          <MapPin size={16} />
+                          {showMap ? 'Hide Map' : 'Show Map'}
+                        </button>
+                        <button
+                          className="outline"
+                          onClick={() => (u ? setModal({ type: 'machine' }) : setModal({ type: 'login' }))}
+                        >
+                          <Plus size={16} /> {t('listMachine')}
+                        </button>
+                      </div>
+                    </div>
 
-              {showMap && (
-                <div style={{ marginBottom: '24px' }}>
-                  <MapPicker
-                    center={[Number(lat) || 30.901, Number(lon) || 75.857]}
-                    radius={Number(radius) || 5}
-                    machines={machines}
-                    onSelectLocation={(newLat, newLon) => {
-                      setLat(newLat);
-                      setLon(newLon);
-                      const key = `ys-search-${newLat}-${newLon}-${radius}-${category}`;
-                      api(
-                        `/machines?latitude=${newLat}&longitude=${newLon}&radius=${radius}&category=${encodeURIComponent(category)}`
-                      )
-                        .then((data) => {
-                          setMachines(data);
-                          localStorage.setItem(key, JSON.stringify({ at: new Date().toISOString(), data }));
-                        })
-                        .catch(() => {});
-                    }}
-                    onSelectMachine={openBooking}
-                    height="380px"
-                    showLocate={true}
-                    lang={lang}
-                  />
-                </div>
-              )}
+                    {showMap && (
+                      <div style={{ marginBottom: '24px' }}>
+                        <MapPicker
+                          center={[Number(lat) || 30.901, Number(lon) || 75.857]}
+                          radius={Number(radius) || 5}
+                          machines={visibleMachines}
+                          onSelectLocation={(newLat, newLon) => {
+                            setLat(newLat);
+                            setLon(newLon);
+                            const key = `ys-search-${newLat}-${newLon}-${radius}-${category}`;
+                            api(
+                              `/machines?latitude=${newLat}&longitude=${newLon}&radius=${radius}&category=${encodeURIComponent(category)}`
+                            )
+                              .then((data) => {
+                                setMachines(data);
+                                localStorage.setItem(key, JSON.stringify({ at: new Date().toISOString(), data }));
+                              })
+                              .catch(() => {});
+                          }}
+                          onSelectMachine={openBooking}
+                          height="380px"
+                          showLocate={true}
+                          lang={lang}
+                        />
+                      </div>
+                    )}
 
-              <div className="cards">
-                {machines.map((m, i) => (
-                  <MachineCard
-                    key={m.id}
-                    machine={m}
-                    index={i}
-                    onBook={openBooking}
-                    lang={lang}
-                  />
-                ))}
-              </div>
+                    <div className="cards">
+                      {visibleMachines.map((m, i) => (
+                        <MachineCard
+                          key={m.id}
+                          machine={m}
+                          index={i}
+                          onBook={openBooking}
+                          lang={lang}
+                        />
+                      ))}
+                    </div>
 
-              {searched && !machines.length && (
-                <div className="empty">
-                  <Tractor size={38} />
-                  <h3>{t('noMachineryFound')}</h3>
-                  <p>{t('noMachinerySub')}</p>
-                </div>
-              )}
+                    {searched && !visibleMachines.length && (
+                      <div className="empty">
+                        <Tractor size={38} />
+                        <h3>{t('noMachineryFound')}</h3>
+                        <p>{t('noMachinerySub')}</p>
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
             </>
           ) : tab === 'weather' ? (
             <WeatherDashboard
@@ -738,128 +799,100 @@ function Workspace({ initialUser, onLogout, sharedLang, setSharedLang }) {
                               <th>{t('equipmentCol')}</th>
                               <th>{t('locationCol')}</th>
                               <th>{t('rateCol')}</th>
+                              <th>Status</th>
                               <th>{t('availabilityCol')}</th>
+                              <th>Listing</th>
                             </tr>
                           </thead>
                           <tbody>
-                            {fleet.map((m) => (
-                              <tr key={m.id}>
-                                <td>
-                                  <strong>{m.name}</strong>
-                                  <small>{m.category}</small>
-                                </td>
-                                <td>{m.village}</td>
-                                <td>
-                                  {INR(m.rate)} / {m.unit === 'hour' ? t('perHour') : t('perAcre')}
-                                </td>
-                                <td>
-                                  <button
-                                    className="outline"
-                                    onClick={() =>
-                                      run(async () =>
-                                        setModal({
-                                          type: 'availability',
-                                          data: await api('/machines/' + m.id + '/availability'),
-                                          machine: m,
+                            {fleet.map((m) => {
+                              const isActive = m.active !== false && m.is_active !== false;
+                              return (
+                                <tr key={m.id}>
+                                  <td>
+                                    <strong>{m.name}</strong>
+                                    <small>{m.category} {m.model ? `· ${m.model}` : ''}</small>
+                                  </td>
+                                  <td>{m.village}</td>
+                                  <td>
+                                    {INR(m.rate)} / {m.unit === 'hour' ? t('perHour') : t('perAcre')}
+                                  </td>
+                                  <td>
+                                    <span
+                                      style={{
+                                        background: isActive ? '#dcfce7' : '#f1f5f9',
+                                        color: isActive ? '#15803d' : '#64748b',
+                                        border: `1px solid ${isActive ? '#bbf7d0' : '#cbd5e1'}`,
+                                        padding: '3px 8px',
+                                        borderRadius: '12px',
+                                        fontSize: '11px',
+                                        fontWeight: '700',
+                                        display: 'inline-block',
+                                      }}
+                                    >
+                                      {isActive ? 'Active' : 'Delisted'}
+                                    </span>
+                                  </td>
+                                  <td>
+                                    <button
+                                      className="outline"
+                                      disabled={!isActive}
+                                      onClick={() =>
+                                        run(async () =>
+                                          setModal({
+                                            type: 'availability',
+                                            data: await api('/machines/' + m.id + '/availability'),
+                                            machine: m,
+                                          })
+                                        )
+                                      }
+                                    >
+                                      {t('calendarBtn')}
+                                    </button>
+                                    <button
+                                      className="text-button"
+                                      disabled={!isActive}
+                                      onClick={() => setModal({ type: 'maintenance', machine: m })}
+                                    >
+                                      {t('blockTimeBtn')}
+                                    </button>
+                                  </td>
+                                  <td>
+                                    <button
+                                      className="outline"
+                                      style={{
+                                        fontSize: '11px',
+                                        padding: '5px 10px',
+                                        marginRight: '6px',
+                                      }}
+                                      onClick={() => setModal({ type: 'machine', initialData: m })}
+                                    >
+                                      Edit
+                                    </button>
+                                    <button
+                                      className="outline"
+                                      style={{
+                                        color: isActive ? '#b91c1c' : '#15803d',
+                                        borderColor: isActive ? '#fca5a5' : '#86efac',
+                                        fontSize: '11px',
+                                        padding: '5px 10px',
+                                      }}
+                                      onClick={() =>
+                                        run(async () => {
+                                          await api(`/machines/${m.id}/status`, { is_active: !isActive }, 'PATCH');
+                                          await load();
                                         })
-                                      )
-                                    }
-                                  >
-                                    {t('calendarBtn')}
-                                  </button>
-                                  <button
-                                    className="text-button"
-                                    onClick={() => setModal({ type: 'maintenance', machine: m })}
-                                  >
-                                    {t('blockTimeBtn')}
-                                  </button>
-                                </td>
-                              </tr>
-                            ))}
+                                      }
+                                    >
+                                      {isActive ? 'Delist' : 'Relist'}
+                                    </button>
+                                  </td>
+                                </tr>
+                              );
+                            })}
                           </tbody>
                         </table>
                       </div>
-                    </>
-                  )}
-
-                  {tab === 'routes' && (
-                    <>
-                      <div className="route-intro">
-                        <Route size={42} />
-                        <h2>{t('routeIntroTitle')}</h2>
-                        <p>{t('routeIntroSub')}</p>
-                      </div>
-                      <form
-                        className="panel inline-form"
-                        onSubmit={(e) => {
-                          e.preventDefault();
-                          const f = new FormData(e.target);
-                          run(async () =>
-                            setRouteResult(
-                              await api(`/routes/${f.get('machine')}?day=${f.get('day')}`)
-                            )
-                          );
-                        }}
-                      >
-                        <FormField label={t('yourMachine')}>
-                          <select name="machine" required>
-                            <option value="">{t('selectEquipment')}</option>
-                            {fleet.map((m) => (
-                              <option key={m.id} value={m.id}>
-                                {m.name}
-                              </option>
-                            ))}
-                          </select>
-                        </FormField>
-                        <FormField label={t('workingDay')}>
-                          <input name="day" type="date" required />
-                        </FormField>
-                        <button className="primary" disabled={busy || !fleet.length}>
-                          {t('calculateRouteBtn')} <ArrowRight size={16} />
-                        </button>
-                      </form>
-
-                      {routeResult && (
-                        <section className="panel">
-                          {routeResult.feasible ? (
-                            <>
-                              <div className="stats">
-                                <Stat
-                                  label={t('separateTripsEst')}
-                                  value={routeResult.baseline_km + ' km'}
-                                />
-                                <Stat
-                                  label={t('combinedRouteEst')}
-                                  value={routeResult.estimated_km + ' km'}
-                                />
-                                <Stat
-                                  label={t('potentialSaved')}
-                                  value={routeResult.saved_km + ' km'}
-                                />
-                              </div>
-                              <ol className="timeline">
-                                {routeResult.stops.map((s) => (
-                                  <li key={s.id}>
-                                    <strong>Booking {s.id.slice(0, 8)}</strong>
-                                    <span>
-                                      {Math.floor(s.start_minute / 60)}:
-                                      {String(Math.floor(s.start_minute % 60)).padStart(2, '0')}{' '}
-                                      · {s.leg_km} km estimated travel
-                                    </span>
-                                  </li>
-                                ))}
-                              </ol>
-                              <p>{routeResult.assumptions}</p>
-                              <small>
-                                {routeResult.solver} · {t('solverTime')}: {routeResult.elapsed_ms}{' '}
-                                ms
-                              </small>
-                            </>
-                          ) : (
-                            <div className="alert">{routeResult.reason}</div>
-                          )}
-                        </section>
-                      )}
                     </>
                   )}
 
@@ -1006,11 +1039,16 @@ function Workspace({ initialUser, onLogout, sharedLang, setSharedLang }) {
                 initialData={modal.initialData}
                 onSubmit={(data) =>
                   run(async () => {
-                    await api('/machines', data);
+                    if (modal.initialData?.id) {
+                      await api(`/machines/${modal.initialData.id}`, data, 'PATCH');
+                      setNotice('Machine details updated successfully!');
+                    } else {
+                      await api('/machines', data);
+                      setNotice('Machine listed successfully! Viewing in your Fleet.');
+                    }
                     await load();
-                    await search();
                     setModal(null);
-                    setNotice('Machine listed.');
+                    setTab('fleet');
                   })
                 }
                 lang={lang}

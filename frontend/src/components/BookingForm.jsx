@@ -24,6 +24,25 @@ export function BookingForm({ machine: m, online, busy, run, onDone, lang = 'en'
   const offeredAttachments = Array.isArray(m.attachments) ? m.attachments : [];
   const hasFuelOption = Boolean(m.fuel_included && Number(m.fuel_rate_extra) > 0);
 
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  const nowMinStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
+
+  let timeError = '';
+  if (startVal && endVal) {
+    const s = new Date(startVal);
+    const e = new Date(endVal);
+    if (s.getTime() < now.getTime() - 60000) {
+      timeError = 'Booking start date/time cannot be in the past.';
+    } else if (e.getTime() <= s.getTime()) {
+      timeError = 'Booking end time must be after start time.';
+    } else if (e.getTime() - s.getTime() < 30 * 60 * 1000) {
+      timeError = 'Booking duration must be at least 30 minutes.';
+    }
+  } else if (!startVal || !endVal) {
+    timeError = 'Please select booking start and end times.';
+  }
+
   useEffect(() => {
     api('/machines/' + m.id + '/availability')
       .then((res) => {
@@ -103,6 +122,7 @@ export function BookingForm({ machine: m, online, busy, run, onDone, lang = 'en'
               name="start"
               type="datetime-local"
               value={startVal}
+              min={nowMinStr}
               onChange={(e) => setStartVal(e.target.value)}
               required
             />
@@ -112,6 +132,7 @@ export function BookingForm({ machine: m, online, busy, run, onDone, lang = 'en'
               name="end"
               type="datetime-local"
               value={endVal}
+              min={startVal || nowMinStr}
               onChange={(e) => setEndVal(e.target.value)}
               required
             />
@@ -289,12 +310,18 @@ export function BookingForm({ machine: m, online, busy, run, onDone, lang = 'en'
           </div>
         )}
 
+        {timeError && (
+          <div className="alert" style={{ margin: '14px 0', fontSize: '12px', background: '#fef2f2', border: '1px solid #fecaca', color: '#b91c1c' }}>
+            {timeError}
+          </div>
+        )}
+
         <div className="actions">
           {online && (
             <button
               type="button"
               className="outline"
-              disabled={busy}
+              disabled={busy || Boolean(timeError)}
               onClick={(e) => {
                 const form = e.currentTarget.form;
                 if (form.reportValidity()) {
@@ -305,7 +332,7 @@ export function BookingForm({ machine: m, online, busy, run, onDone, lang = 'en'
               {t('calculateEstimateBtn')}
             </button>
           )}
-          <button className="primary" disabled={busy || (online && !quote)}>
+          <button className="primary" disabled={busy || Boolean(timeError) || (online && !quote)}>
             {online ? t('requestApprovalBtn') : t('saveOfflineDraftBtn')}
           </button>
         </div>
