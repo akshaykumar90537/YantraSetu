@@ -38,21 +38,37 @@ import { Invoice } from './components/Invoice';
 import { MapPicker } from './components/MapPicker';
 import { RatingModal } from './components/RatingModal';
 import { WeatherDashboard } from './components/WeatherDashboard';
+import { LandingPage } from './components/LandingPage';
 import './style.css';
 import { AuthGate } from './components/AuthGate';
 
 export function App() {
+  const [lang, setLang] = useState(localStorage.getItem('ys-lang') || 'en');
+
   return (
     <AuthGate>
-      {(user, onLogout) => (
-        <Workspace key={user ? user.id : 'guest'} initialUser={user} onLogout={onLogout} />
-      )}
+      {(user, onLogout) =>
+        user ? (
+          <Workspace key={user.id} initialUser={user} onLogout={onLogout} sharedLang={lang} setSharedLang={setLang} />
+        ) : (
+          <LandingPage
+            onUser={(u) => {
+              /* AuthGate re-checks session after login succeeds via cookie,
+                 but LoginForm calls onUser directly so we reload to re-trigger AuthGate */
+              window.location.reload();
+            }}
+            lang={lang}
+            setLang={setLang}
+          />
+        )
+      }
     </AuthGate>
   );
 }
 
-function Workspace({ initialUser, onLogout }) {
-  const [lang, setLang] = useState(localStorage.getItem('ys-lang') || 'en');
+function Workspace({ initialUser, onLogout, sharedLang, setSharedLang }) {
+  const [lang, setLangLocal] = useState(sharedLang || localStorage.getItem('ys-lang') || 'en');
+  const setLang = (v) => { setLangLocal(v); if (setSharedLang) setSharedLang(v); };
   const t = (k, p) => translate(lang, k, p);
 
   const [u, setUser] = useState(initialUser);

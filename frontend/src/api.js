@@ -15,6 +15,9 @@ export async function api(path, data, customMethod) {
   try {
     body = JSON.parse(text);
   } catch {
+    if (!response.ok) {
+      throw new Error(`Server error (${response.status}): ${text.slice(0, 100) || response.statusText}`);
+    }
     throw new Error('The API is unavailable. Start PostgreSQL and the backend using the README.');
   }
 
@@ -30,4 +33,3 @@ export async function api(path, data, customMethod) {
 
   return body;
 }
-
