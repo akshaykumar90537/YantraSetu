@@ -3,6 +3,7 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { Navigation, MapPin, Search as SearchIcon, Loader2, X } from 'lucide-react';
 import { INR, translate } from '../locales';
+import { searchLocalVillages, searchOnlineVillages } from '../data/villages';
 
 export function MapPicker({
   center = [30.901, 75.857],
@@ -272,7 +273,7 @@ export function MapPicker({
     );
   }
 
-  // OpenStreetMap Village / Town Geocoding Search (restricted to India)
+  // Village / Town Geocoding Search (Verified Local + OpenStreetMap Fallback)
   async function handleSearchVillage(e) {
     if (e) e.preventDefault();
     const query = villageSearch.trim();
@@ -282,21 +283,27 @@ export function MapPicker({
     setLocateError('');
     setLocateNotice('');
 
+    // 1. Check verified local agricultural villages first
+    const local = searchLocalVillages(query, 1);
+    if (local && local.length > 0) {
+      const match = local[0];
+      applyLocation(Number(match.lat), Number(match.lon), `📍 Found: ${match.label}`);
+      setSearchingVillage(false);
+      return;
+    }
+
+    // 2. Fallback to online OpenStreetMap search
     try {
-      const res = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&countrycodes=in&format=json&limit=1`, {
-        headers: { Accept: 'application/json' },
-      });
-      const data = await res.json();
-      if (data && data.length > 0) {
-        const item = data[0];
-        const displayName = item.display_name ? item.display_name.split(',').slice(0, 3).join(',') : (item.name || query);
-        applyLocation(Number(item.lat), Number(item.lon), `📍 Found: ${displayName}`);
+      const online = await searchOnlineVillages(query, 1);
+      if (online && online.length > 0) {
+        const item = online[0];
+        applyLocation(Number(item.lat), Number(item.lon), `📍 Found: ${item.label}`);
       } else {
         setLocateError(`Could not find "${query}". Try searching with district or state (e.g. "${query}, Punjab").`);
-        setSearchingVillage(false);
       }
     } catch {
       setLocateError('Location search service temporarily unavailable. Please tap on map to drop pin.');
+    } finally {
       setSearchingVillage(false);
     }
   }
