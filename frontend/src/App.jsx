@@ -31,6 +31,7 @@ import { BookingForm } from './components/BookingForm';
 import { MeterForm } from './components/MeterForm';
 import { ConfirmMeter } from './components/ConfirmMeter';
 import { Invoice } from './components/Invoice';
+import { MapPicker } from './components/MapPicker';
 import './style.css';
 
 export function App() {

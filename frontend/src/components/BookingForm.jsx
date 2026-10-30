@@ -1,17 +1,37 @@
 import React, { useState, useEffect } from 'react';
-import { FormField, TimeFields } from './Common';
+import { FormField } from './Common';
 import { api } from '../api';
 import { INR, dt, translate } from '../locales';
+import { TimelineCalendar } from './TimelineCalendar';
+import { MapPicker } from './MapPicker';
+import { MapPin } from 'lucide-react';
 
 export function BookingForm({ machine: m, online, busy, run, onDone, lang = 'en' }) {
   const [quote, setQuote] = useState(null);
   const [idempotencyKey] = useState(crypto.randomUUID());
   const [availability, setAvailability] = useState(null);
+  const [startVal, setStartVal] = useState('');
+  const [endVal, setEndVal] = useState('');
+  const [farmLat, setFarmLat] = useState(String(m.latitude || 30.901));
+  const [farmLon, setFarmLon] = useState(String(m.longitude || 75.857));
+  const [showFarmMap, setShowFarmMap] = useState(false);
+
   const t = (k, p) => translate(lang, k, p);
 
   useEffect(() => {
     api('/machines/' + m.id + '/availability')
-      .then(setAvailability)
+      .then((res) => {
+        setAvailability(res);
+        if (res.next_available) {
+          const s = new Date(res.next_available.start_at);
+          const e = new Date(res.next_available.end_at);
+          const pad = (n) => String(n).padStart(2, '0');
+          const fmt = (d) =>
+            `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+          setStartVal(fmt(s));
+          setEndVal(fmt(e));
+        }
+      })
       .catch(() => {});
   }, [m.id]);
 
@@ -22,10 +42,16 @@ export function BookingForm({ machine: m, online, busy, run, onDone, lang = 'en'
       start_at: new Date(f.get('start')).toISOString(),
       end_at: new Date(f.get('end')).toISOString(),
       acres: m.unit === 'acre' ? f.get('acres') : null,
-      latitude: Number(f.get('lat')),
-      longitude: Number(f.get('lon')),
+      latitude: Number(farmLat),
+      longitude: Number(farmLon),
       idempotency_key: idempotencyKey,
     };
+  }
+
+  function handleSelectSlot(startIsoLocal, endIsoLocal) {
+    setStartVal(startIsoLocal);
+    setEndVal(endIsoLocal);
+    setQuote(null);
   }
 
   return (
@@ -37,22 +63,14 @@ export function BookingForm({ machine: m, online, busy, run, onDone, lang = 'en'
         {t('mobilizationLabel').toLowerCase()}. {t('noPlatformFee')}
       </p>
 
-      <details>
-        <summary>{t('currentReservedIntervals')}</summary>
-        {availability ? (
-          [...availability.reserved, ...availability.maintenance].length ? (
-            [...availability.reserved, ...availability.maintenance].map((a, i) => (
-              <p key={i}>
-                {dt(a.start_at)} → {dt(a.end_at)} {a.status ? `(${a.status})` : '(MAINTENANCE)'}
-              </p>
-            ))
-          ) : (
-            <p>{t('noIntervals')}</p>
-          )
-        ) : (
-          <p>{t('liveConnectionRequired')}</p>
-        )}
-      </details>
+      {/* Visual Timeline Calendar & Next Available Slot */}
+      <TimelineCalendar
+        availability={availability}
+        selectedStart={startVal}
+        selectedEnd={endVal}
+        onSelectSlot={handleSelectSlot}
+        lang={lang}
+      />
 
       <form
         onChange={() => setQuote(null)}
@@ -62,7 +80,26 @@ export function BookingForm({ machine: m, online, busy, run, onDone, lang = 'en'
           run(async () => onDone(d, !online));
         }}
       >
-        <TimeFields startLabel={t('startDeviceTime')} endLabel={t('endDeviceTime')} />
+        <div className="form-grid">
+          <FormField label={t('startDeviceTime')}>
+            <input
+              name="start"
+              type="datetime-local"
+              value={startVal}
+              onChange={(e) => setStartVal(e.target.value)}
+              required
+            />
+          </FormField>
+          <FormField label={t('endDeviceTime')}>
+            <input
+              name="end"
+              type="datetime-local"
+              value={endVal}
+              onChange={(e) => setEndVal(e.target.value)}
+              required
+            />
+          </FormField>
+        </div>
 
         {m.unit === 'acre' && (
           <FormField label={t('estimatedAcreage')}>
@@ -78,7 +115,8 @@ export function BookingForm({ machine: m, online, busy, run, onDone, lang = 'en'
               step="any"
               min="-90"
               max="90"
-              defaultValue={m.latitude}
+              value={farmLat}
+              onChange={(e) => setFarmLat(e.target.value)}
               required
             />
           </FormField>
@@ -89,11 +127,39 @@ export function BookingForm({ machine: m, online, busy, run, onDone, lang = 'en'
               step="any"
               min="-180"
               max="180"
-              defaultValue={m.longitude}
+              value={farmLon}
+              onChange={(e) => setFarmLon(e.target.value)}
               required
             />
           </FormField>
         </div>
+
+        <button
+          type="button"
+          className="text-button"
+          onClick={() => setShowFarmMap(!showFarmMap)}
+          style={{ marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}
+        >
+          <MapPin size={15} />
+          {showFarmMap ? 'Hide Farm Map Pin' : '📍 Pin Farm Location on OpenStreetMap'}
+        </button>
+
+        {showFarmMap && (
+          <div style={{ marginBottom: '16px' }}>
+            <MapPicker
+              center={[Number(farmLat) || 30.901, Number(farmLon) || 75.857]}
+              height="200px"
+              radius={0}
+              interactive={true}
+              showLocate={true}
+              onSelectLocation={(newLat, newLon) => {
+                setFarmLat(newLat);
+                setFarmLon(newLon);
+              }}
+              lang={lang}
+            />
+          </div>
+        )}
 
         <p className="caption">{t('bookingDisclaimer')}</p>
 
@@ -136,4 +202,3 @@ export function BookingForm({ machine: m, online, busy, run, onDone, lang = 'en'
     </>
   );
 }
-

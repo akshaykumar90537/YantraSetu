@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field, AwareDatetime
 from psycopg.errors import ExclusionViolation
 from psycopg.types.json import Jsonb
 from app.db import db, one, many
-from app.domain import bill, meter_quantity, optimize
+from app.domain import bill, meter_quantity, optimize, find_next_available_slot
 from app.sms import provider
 
 app=FastAPI(title='YantraSetu',version='0.1.0')
@@ -189,9 +189,16 @@ def machines(latitude:float=30.901,longitude:float=75.857,radius:int=5,category:
 def fleet(u=Depends(user)):
     with db() as c: return many(c,MACHINE_SELECT+' WHERE m.owner_id=%s ORDER BY m.created_at',(u['id'],))
 @app.get('/api/machines/{ident}/availability')
-def availability(ident:UUID):
+def availability(ident:UUID,duration_minutes:int=120):
     with db() as c:
-        return {'reserved':many(c,"SELECT start_at,reserved_until AS end_at,status FROM bookings WHERE machine_id=%s AND status IN ('PENDING','APPROVED','IN_PROGRESS') AND reserved_until>now() ORDER BY start_at",(ident,)), 'maintenance':many(c,'SELECT start_at,end_at FROM maintenance WHERE machine_id=%s AND end_at>now() ORDER BY start_at',(ident,))}
+        m=one(c,'SELECT buffer_minutes FROM machines WHERE id=%s',(ident,))
+        buffer=m['buffer_minutes'] if m else 15
+        reserved=many(c,"SELECT start_at,reserved_until AS end_at,reserved_until,status,quantity FROM bookings WHERE machine_id=%s AND status IN ('PENDING','APPROVED','IN_PROGRESS') AND reserved_until>now() ORDER BY start_at",(ident,))
+        maintenance=many(c,'SELECT start_at,end_at,reason FROM maintenance WHERE machine_id=%s AND end_at>now() ORDER BY start_at',(ident,))
+        all_busy=[*reserved,*[{'start_at':x['start_at'],'reserved_until':x['end_at'],'status':'MAINTENANCE'} for x in maintenance]]
+        now=datetime.now(timezone.utc)
+        next_slot=find_next_available_slot(now,all_busy,buffer,duration_minutes)
+        return {'reserved':reserved,'maintenance':maintenance,'next_available':next_slot,'buffer_minutes':buffer}
 class Block(BaseModel):
     start_at:AwareDatetime
     end_at:AwareDatetime

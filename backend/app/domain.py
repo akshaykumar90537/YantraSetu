@@ -62,3 +62,31 @@ def optimize(depot, jobs, speed_kmh=20):
                 solver='Exact enumeration v1 (maximum 8 jobs); proposal only, bookings unchanged.')
     best['estimated_km']=round(best['estimated_km'],3)
     return best
+
+def find_next_available_slot(now_dt, busy_intervals, buffer_minutes=15, duration_minutes=120):
+    """Finds next continuous free slot of duration_minutes starting at or after now_dt."""
+    from datetime import timedelta
+    minute = (now_dt.minute // 15 + 1) * 15
+    curr = now_dt.replace(second=0, microsecond=0)
+    if minute >= 60:
+        curr = curr.replace(minute=0) + timedelta(hours=1)
+    else:
+        curr = curr.replace(minute=minute)
+    
+    intervals = []
+    for iv in busy_intervals:
+        s = iv.get('start_at') if isinstance(iv, dict) else iv[0]
+        e = iv.get('reserved_until', iv.get('end_at')) if isinstance(iv, dict) else iv[1]
+        if e > curr:
+            intervals.append((s, e))
+    intervals.sort(key=lambda x: x[0])
+    
+    req_dur = timedelta(minutes=duration_minutes)
+    candidate_start = curr
+    for s, e in intervals:
+        if candidate_start + req_dur <= s:
+            return {'start_at': candidate_start.isoformat(), 'end_at': (candidate_start + req_dur).isoformat()}
+        if candidate_start < e:
+            candidate_start = e
+    return {'start_at': candidate_start.isoformat(), 'end_at': (candidate_start + req_dur).isoformat()}
+
