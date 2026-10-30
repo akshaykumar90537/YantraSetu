@@ -1,10 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Sprout, ArrowRight, UserCheck, UserPlus, Phone, Mail, AlertCircle, Info } from 'lucide-react';
+import { Sprout, ArrowRight, UserCheck, UserPlus, Phone, Mail, AlertCircle, Info, Globe } from 'lucide-react';
 import { FormField } from './Common';
 import { api } from '../api';
 import { translate } from '../locales';
 
-export function LoginForm({ busy, run, onUser, lang = 'en' }) {
+export function LoginForm({ busy, run, onUser, lang = 'en', setLang }) {
   const [config, setConfig] = useState({ phone: true, email: 'development' });
   const [mode, setMode] = useState('phone'); // User can toggle between Phone and Email
   const [challenge, setChallenge] = useState(null);
@@ -104,8 +104,34 @@ export function LoginForm({ busy, run, onUser, lang = 'en' }) {
 
   return (
     <>
-      <div className="brand-mark">
-        <Sprout />
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+        <div className="brand-mark">
+          <Sprout />
+        </div>
+        {setLang && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <Globe size={15} style={{ color: '#566e4a' }} />
+            <select
+              aria-label="Language"
+              value={lang}
+              onChange={(e) => setLang(e.target.value)}
+              style={{
+                border: '1px solid #dce4d5',
+                borderRadius: '6px',
+                padding: '4px 8px',
+                fontSize: '12px',
+                background: '#fff',
+                color: '#28583e',
+                fontWeight: '500',
+                cursor: 'pointer',
+              }}
+            >
+              <option value="en">English</option>
+              <option value="hi">हिन्दी</option>
+              <option value="pa">ਪੰਜਾਬੀ</option>
+            </select>
+          </div>
+        )}
       </div>
 
       {/* Auth Method Selector */}
@@ -123,7 +149,7 @@ export function LoginForm({ busy, run, onUser, lang = 'en' }) {
             style={{ flex: 1, padding: '9px 12px', fontSize: '12px' }}
           >
             <Phone size={15} style={{ marginRight: '6px' }} />
-            {t('mobileNumber')} (OTP)
+            {lang === 'hi' ? 'मोबाइल (OTP)' : lang === 'pa' ? 'ਮੋਬਾਈਲ (OTP)' : 'Mobile (OTP)'}
           </button>
           <button
             type="button"
@@ -137,7 +163,7 @@ export function LoginForm({ busy, run, onUser, lang = 'en' }) {
             style={{ flex: 1, padding: '9px 12px', fontSize: '12px' }}
           >
             <Mail size={15} style={{ marginRight: '6px' }} />
-            Email
+            {lang === 'hi' ? 'ईमेल' : lang === 'pa' ? 'ਈਮੇਲ' : 'Email'}
           </button>
         </div>
       )}

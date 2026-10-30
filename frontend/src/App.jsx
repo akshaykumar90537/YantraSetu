@@ -1005,6 +1005,7 @@ function Workspace({ initialUser, onLogout, sharedLang, setSharedLang }) {
                   setModal(null);
                 }}
                 lang={lang}
+                setLang={setLang}
               />
             )}
 
