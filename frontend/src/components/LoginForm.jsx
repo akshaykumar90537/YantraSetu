@@ -155,7 +155,7 @@ export function LoginForm({ busy, run, onUser, lang = 'en' }) {
                 </span>
               </div>
 
-              <h2>{t('welcomeBack', { name: challenge.user_name || 'Farmer' })}</h2>
+              <h2>{challenge.user_name ? t('welcomeBack', { name: challenge.user_name }) : t('welcomeBackTitle')}</h2>
               <p>{t('signInSubtitle')}</p>
 
               <form

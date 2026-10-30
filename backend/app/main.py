@@ -198,9 +198,6 @@ def login(p:Login,request:Request):
         existing = one(c,'SELECT id,name,roles,phone FROM users WHERE phone=%s',(p.phone,))
         res = issue(c,p.phone,'login',{'user_exists': existing is not None})
         res['is_new_user'] = existing is None
-        if existing:
-            res['user_name'] = existing.get('name', '')
-            res['user_roles'] = existing.get('roles', [])
         return res
 @app.post('/api/auth/verify')
 def verify(p:LoginVerify,response:Response):
