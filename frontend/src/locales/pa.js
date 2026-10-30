@@ -120,6 +120,13 @@ export const pa = {
   roleFpo: 'FPO ਮੈਨੇਜਰ',
   roleNote: 'ਮੌਜੂਦਾ ਭੂਮਿਕਾਵਾਂ ਨਹੀਂ ਬਦਲਣਗੀਆਂ।',
   continueBtn: 'ਅੱਗੇ ਵਧੋ',
+  welcomeBackUser: 'ਜੀ ਆਇਆਂ ਨੂੰ, {name}!',
+  welcomeBackTitle: 'ਜੀ ਆਇਆਂ ਨੂੰ',
+  loginExistingSub: 'ਆਪਣੇ ਖਾਤੇ ਵਿੱਚ ਲੌਗ ਇਨ ਕਰਨ ਲਈ ਪੁਸ਼ਟੀਕਰਨ ਕੋਡ ਦਰਜ ਕਰੋ।',
+  registerNewSub: 'ਹੇਠਾਂ ਆਪਣਾ ਨਾਮ ਅਤੇ ਭੂਮਿਕਾ ਦਰਜ ਕਰਕੇ ਨਵਾਂ ਖਾਤਾ ਬਣਾਓ।',
+  signInBtn: 'ਸਾਇਨ ਇਨ ਕਰੋ',
+  registerBtn: 'ਰਜਿਸਟਰ ਕਰੋ ਅਤੇ ਅੱਗੇ ਵਧੋ',
+  useDifferentNumber: 'ਵੱਖਰਾ ਫ਼ੋਨ ਨੰਬਰ ਵਰਤੋਂ',
   requestNewCode: 'ਨਵਾਂ ਕੋਡ ਮੰਗੋ',
 
   // Booking Modal

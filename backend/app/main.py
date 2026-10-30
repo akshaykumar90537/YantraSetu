@@ -2,7 +2,7 @@ import os, secrets, hashlib, hmac, json
 from uuid import uuid4, UUID
 from datetime import datetime, timedelta, timezone, date
 from decimal import Decimal
-from typing import Literal
+from typing import Literal, Optional
 from fastapi import FastAPI, HTTPException, Request, Response, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, AwareDatetime
@@ -97,9 +97,9 @@ class Verify(BaseModel):
     challenge_id:UUID
     code:str=Field(pattern=r'^\d{6}$')
 class LoginVerify(Verify):
-    name:str=Field(min_length=2,max_length=80)
-    roles:list[Literal['farmer','owner','operator','fpo']]=Field(default=['farmer'],min_length=1,max_length=4)
-    language:Literal['en','hi','pa']='en'
+    name:Optional[str]=Field(default=None,max_length=80)
+    roles:Optional[list[Literal['farmer','owner','operator','fpo']]]=None
+    language:Optional[Literal['en','hi','pa']]='en'
 
 @app.get('/api/health')
 def health():
@@ -109,14 +109,26 @@ def health():
 def login(p:Login,request:Request):
     with db() as c:
         throttle(c,'ip:'+request.client.host,20,600)
-        return issue(c,p.phone,'login',{})
+        existing_user=one(c,'SELECT id,name,roles,language FROM users WHERE phone=%s',(p.phone,))
+        res=issue(c,p.phone,'login',{})
+        res['user_exists']=existing_user is not None
+        if existing_user:
+            res['name']=existing_user['name']
+            res['roles']=existing_user['roles']
+        return res
 @app.post('/api/auth/verify')
 def verify(p:LoginVerify,response:Response):
     with db() as c:
         row=consume(c,p.challenge_id,p.code,'login')
         u=one(c,'SELECT * FROM users WHERE phone=%s',(row['phone'],))
         if not u:
-            u=one(c,'INSERT INTO users(id,phone,name,roles,language) VALUES(%s,%s,%s,%s,%s) RETURNING *',(uid(),row['phone'],p.name,list(set(p.roles)),p.language))
+            clean_name=(p.name or '').strip()
+            require(len(clean_name)>=2,'Name is required for new account registration (minimum 2 characters)',422)
+            assigned_roles=list(set(p.roles)) if (p.roles and len(p.roles)>0) else ['farmer']
+            u=one(c,'INSERT INTO users(id,phone,name,roles,language) VALUES(%s,%s,%s,%s,%s) RETURNING *',(uid(),row['phone'],clean_name,assigned_roles,p.language or 'en'))
+        elif p.language and u.get('language')!=p.language:
+            c.execute('UPDATE users SET language=%s WHERE id=%s',(p.language,u['id']))
+            u['language']=p.language
         token=secrets.token_urlsafe(32)
         c.execute('INSERT INTO sessions VALUES(%s,%s,now()+interval \'24 hours\')',(digest(token),u['id']))
     response.set_cookie('ys_session',token,httponly=True,secure=not DEV,samesite='strict',max_age=86400,path='/')

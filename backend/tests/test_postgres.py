@@ -142,3 +142,66 @@ def test_otp_wrong_attempts_persist_and_lock(database,monkeypatch):
     for _ in range(5):assert client.post('/api/auth/verify',json=body).status_code==400
     body['code']=challenge['development_code']
     assert client.post('/api/auth/verify',json=body).status_code==400
+
+def test_user_login_does_not_recreate_or_require_registration(database, monkeypatch):
+    from contextlib import contextmanager
+    from psycopg.rows import dict_row
+    from fastapi.testclient import TestClient
+    from app import main
+    connect, *_ = database
+    @contextmanager
+    def isolated_db():
+        with connect() as c:
+            c.row_factory = dict_row
+            yield c
+    monkeypatch.setattr(main, 'db', isolated_db)
+    headers = {'X-Requested-With': 'YantraSetu', 'Origin': 'http://localhost:5173'}
+    client = TestClient(main.app, headers=headers)
+
+    phone = '+919988776655'
+
+    # 1. First time request: user does not exist yet
+    r1 = client.post('/api/auth/request', json={'phone': phone})
+    assert r1.status_code == 200
+    ch1 = r1.json()
+    assert ch1['user_exists'] is False
+    assert ch1.get('name') is None
+
+    # 2. Register first time
+    v1 = client.post('/api/auth/verify', json={
+        'challenge_id': ch1['challenge_id'],
+        'code': ch1['development_code'],
+        'name': 'Gurpreet Singh',
+        'roles': ['farmer']
+    })
+    assert v1.status_code == 200
+    u1 = v1.json()
+    assert u1['name'] == 'Gurpreet Singh'
+    assert u1['phone'] == phone
+
+    # Logout
+    client.post('/api/auth/logout')
+
+    # 3. Second time request: user already exists
+    r2 = client.post('/api/auth/request', json={'phone': phone})
+    assert r2.status_code == 200
+    ch2 = r2.json()
+    assert ch2['user_exists'] is True
+    assert ch2['name'] == 'Gurpreet Singh'
+    assert ch2['roles'] == ['farmer']
+
+    # 4. Login without name or roles (must succeed into existing account)
+    v2 = client.post('/api/auth/verify', json={
+        'challenge_id': ch2['challenge_id'],
+        'code': ch2['development_code']
+    })
+    assert v2.status_code == 200
+    u2 = v2.json()
+    assert u2['id'] == u1['id']
+    assert u2['name'] == 'Gurpreet Singh'
+
+    # 5. Verify only 1 record exists in users table for this phone
+    with isolated_db() as c:
+        records = c.execute('SELECT * FROM users WHERE phone=%s', (phone,)).fetchall()
+        assert len(records) == 1
+

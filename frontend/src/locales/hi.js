@@ -120,6 +120,13 @@ export const hi = {
   roleFpo: 'FPO प्रबंधक',
   roleNote: 'मौजूदा भूमिकाएं नहीं बदलेंगी। FPO पंजीकरण अन्य संस्थाओं तक पहुंच नहीं देता।',
   continueBtn: 'आगे बढ़ें',
+  welcomeBackUser: 'वापसी पर स्वागत है, {name}!',
+  welcomeBackTitle: 'वापसी पर स्वागत है',
+  loginExistingSub: 'अपने खाते में लॉग इन करने के लिए सत्यापन कोड दर्ज करें।',
+  registerNewSub: 'नीचे अपना नाम और भूमिका दर्ज करके नया खाता बनाएं।',
+  signInBtn: 'लॉग इन करें',
+  registerBtn: 'पंजीकरण करें और आगे बढ़ें',
+  useDifferentNumber: 'दूसरा फ़ोन नंबर उपयोग करें',
   requestNewCode: 'नया कोड मांगें',
 
   // Booking Modal
