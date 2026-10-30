@@ -125,6 +125,13 @@ export const en = {
   roleFpo: 'fpo',
   roleNote: 'Existing account roles stay unchanged. FPO registration does not grant access to another organization.',
   continueBtn: 'Continue',
+  welcomeBackUser: 'Welcome back, {name}!',
+  welcomeBackTitle: 'Welcome Back',
+  loginExistingSub: 'Enter your verification code to sign in to your account.',
+  registerNewSub: 'Create your new account by entering your name and role below.',
+  signInBtn: 'Sign In',
+  registerBtn: 'Register & Continue',
+  useDifferentNumber: 'Use a different phone number',
   requestNewCode: 'Request a new code',
 
   // Booking Modal
