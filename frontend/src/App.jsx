@@ -840,6 +840,17 @@ function Workspace({ initialUser, onLogout }) {
                                     <button
                                       className="outline"
                                       style={{
+                                        fontSize: '11px',
+                                        padding: '5px 10px',
+                                        marginRight: '6px',
+                                      }}
+                                      onClick={() => setModal({ type: 'machine', initialData: m })}
+                                    >
+                                      Edit
+                                    </button>
+                                    <button
+                                      className="outline"
+                                      style={{
                                         color: isActive ? '#b91c1c' : '#15803d',
                                         borderColor: isActive ? '#fca5a5' : '#86efac',
                                         fontSize: '11px',
@@ -1088,10 +1099,15 @@ function Workspace({ initialUser, onLogout }) {
                 initialData={modal.initialData}
                 onSubmit={(data) =>
                   run(async () => {
-                    await api('/machines', data);
+                    if (modal.initialData?.id) {
+                      await api(`/machines/${modal.initialData.id}`, data, 'PATCH');
+                      setNotice('Machine details updated successfully!');
+                    } else {
+                      await api('/machines', data);
+                      setNotice('Machine listed successfully! Viewing in your Fleet.');
+                    }
                     await load();
                     setModal(null);
-                    setNotice('Machine listed successfully! Viewing in your Fleet.');
                     setTab('fleet');
                   })
                 }

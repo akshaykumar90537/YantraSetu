@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Plus, Check, Wrench, Fuel, X } from 'lucide-react';
+import { Plus, Check, Wrench, Fuel, X, MapPin, Navigation, Loader2 } from 'lucide-react';
 import { FormField } from './Common';
 import { INR, translate } from '../locales';
 
@@ -30,6 +30,10 @@ export function MachineForm({ orgs = [], busy, onSubmit, initialData = null, lan
   const [longitude, setLongitude] = useState(initialData?.longitude ?? 75.857);
   const [description, setDescription] = useState(initialData?.description || '');
   const [orgId, setOrgId] = useState(initialData?.organization_id || '');
+  const [isGeocoding, setIsGeocoding] = useState(false);
+  const [geoNotice, setGeoNotice] = useState(
+    initialData?.latitude ? `📍 Coordinates: ${Number(initialData.latitude).toFixed(4)}, ${Number(initialData.longitude).toFixed(4)}` : ''
+  );
 
   const [attachments, setAttachments] = useState(
     Array.isArray(initialData?.attachments) ? initialData.attachments : []
@@ -38,6 +42,61 @@ export function MachineForm({ orgs = [], busy, onSubmit, initialData = null, lan
   const [fuelRateExtra, setFuelRateExtra] = useState(initialData?.fuel_rate_extra ?? 180);
   const [customAttName, setCustomAttName] = useState('');
   const [customAttRate, setCustomAttRate] = useState('');
+
+  async function lookupCoordinates(nameToLookup) {
+    const query = (nameToLookup || village).trim();
+    if (!query) return;
+    setIsGeocoding(true);
+    setGeoNotice('');
+    try {
+      let res = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&countrycodes=in&format=json&limit=1`, {
+        headers: { Accept: 'application/json' },
+      });
+      let data = await res.json();
+      if ((!data || data.length === 0) && !query.toLowerCase().includes('punjab')) {
+        res = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query + ', Punjab')}&countrycodes=in&format=json&limit=1`, {
+          headers: { Accept: 'application/json' },
+        });
+        data = await res.json();
+      }
+      if (data && data.length > 0) {
+        const lat = Number(Number(data[0].lat).toFixed(5));
+        const lon = Number(Number(data[0].lon).toFixed(5));
+        setLatitude(lat);
+        setLongitude(lon);
+        setGeoNotice(`📍 GPS auto-set: ${lat}, ${lon} (${data[0].name || query})`);
+      } else {
+        setGeoNotice('Could not find GPS for this location. You can enter coordinates below or use GPS button.');
+      }
+    } catch {
+      setGeoNotice('Location lookup unavailable. You can adjust latitude/longitude below.');
+    } finally {
+      setIsGeocoding(false);
+    }
+  }
+
+  function useCurrentLocation() {
+    if (!navigator.geolocation) {
+      setGeoNotice('Geolocation is not supported by your browser.');
+      return;
+    }
+    setIsGeocoding(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const lat = Number(pos.coords.latitude.toFixed(5));
+        const lon = Number(pos.coords.longitude.toFixed(5));
+        setLatitude(lat);
+        setLongitude(lon);
+        setGeoNotice(`📍 Current device GPS set: ${lat}, ${lon}`);
+        setIsGeocoding(false);
+      },
+      (err) => {
+        setGeoNotice('Could not retrieve current location: ' + err.message);
+        setIsGeocoding(false);
+      },
+      { timeout: 8000, enableHighAccuracy: true }
+    );
+  }
 
   // Validation
   const nameError = !name.trim()
@@ -155,9 +214,40 @@ export function MachineForm({ orgs = [], busy, onSubmit, initialData = null, lan
               maxLength="100"
               value={village}
               onChange={(e) => setVillage(e.target.value)}
+              onBlur={() => {
+                if (village.trim() && (!initialData || village.trim() !== initialData.village)) {
+                  lookupCoordinates(village);
+                }
+              }}
               required
-              placeholder="e.g. Khanna, Ludhiana"
+              placeholder="e.g. Gharuan, Mohali or Khanna, Ludhiana"
             />
+            <div style={{ display: 'flex', gap: '8px', marginTop: '6px', flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                className="outline"
+                style={{ fontSize: '11px', padding: '4px 10px', display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer' }}
+                disabled={isGeocoding || !village.trim()}
+                onClick={() => lookupCoordinates(village)}
+              >
+                {isGeocoding ? <Loader2 size={12} className="spin" /> : <MapPin size={12} />}
+                {isGeocoding ? 'Detecting...' : 'Detect GPS from Village'}
+              </button>
+              <button
+                type="button"
+                className="outline"
+                style={{ fontSize: '11px', padding: '4px 10px', display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer' }}
+                disabled={isGeocoding}
+                onClick={useCurrentLocation}
+              >
+                <Navigation size={12} /> Use My Current GPS
+              </button>
+            </div>
+            {geoNotice && (
+              <span style={{ fontSize: '11px', color: geoNotice.startsWith('📍') ? '#15803d' : '#b45309', display: 'block', marginTop: '5px', fontWeight: '500' }}>
+                {geoNotice}
+              </span>
+            )}
             {villageError && <span style={{ color: '#dc2626', fontSize: '11px', display: 'block', marginTop: '4px' }}>{villageError}</span>}
           </FormField>
         </div>
