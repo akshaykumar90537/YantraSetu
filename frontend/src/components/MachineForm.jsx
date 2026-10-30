@@ -18,6 +18,19 @@ export function MachineForm({ orgs = [], busy, onSubmit, initialData = null, lan
   const t = (k, p) => translate(lang, k, p);
   const isEdit = Boolean(initialData);
 
+  const [name, setName] = useState(initialData?.name || '');
+  const [model, setModel] = useState(initialData?.model || '');
+  const [category, setCategory] = useState(initialData?.category || 'Tractor');
+  const [village, setVillage] = useState(initialData?.village || '');
+  const [rate, setRate] = useState(initialData?.rate ?? '');
+  const [unit, setUnit] = useState(initialData?.unit || 'hour');
+  const [mobilization, setMobilization] = useState(initialData?.mobilization ?? 0);
+  const [buffer, setBuffer] = useState(initialData?.buffer_minutes ?? 15);
+  const [latitude, setLatitude] = useState(initialData?.latitude ?? 30.901);
+  const [longitude, setLongitude] = useState(initialData?.longitude ?? 75.857);
+  const [description, setDescription] = useState(initialData?.description || '');
+  const [orgId, setOrgId] = useState(initialData?.organization_id || '');
+
   const [attachments, setAttachments] = useState(
     Array.isArray(initialData?.attachments) ? initialData.attachments : []
   );
@@ -25,6 +38,24 @@ export function MachineForm({ orgs = [], busy, onSubmit, initialData = null, lan
   const [fuelRateExtra, setFuelRateExtra] = useState(initialData?.fuel_rate_extra ?? 180);
   const [customAttName, setCustomAttName] = useState('');
   const [customAttRate, setCustomAttRate] = useState('');
+
+  // Validation
+  const nameError = !name.trim()
+    ? 'Machine name is required.'
+    : name.trim().length < 3
+    ? 'Machine name must be 3-100 characters.'
+    : '';
+  const modelError = !model.trim()
+    ? 'Machine model is required.'
+    : model.trim().length < 2
+    ? 'Model must be 2-100 characters.'
+    : '';
+  const villageError = !village.trim() ? 'Location (village/town) is required.' : '';
+  const rateError = !rate || Number(rate) <= 0 ? 'Rate must be greater than zero.' : '';
+  const bufferError = Number(buffer) < 0 ? 'Buffer cannot be negative.' : '';
+  const mobError = Number(mobilization) < 0 ? 'Mobilization fee cannot be negative.' : '';
+
+  const isValid = !nameError && !modelError && !villageError && !rateError && !bufferError && !mobError;
 
   function addPresetAttachment(preset) {
     if (attachments.some((a) => a.name.toLowerCase() === preset.name.toLowerCase())) return;
@@ -58,39 +89,56 @@ export function MachineForm({ orgs = [], busy, onSubmit, initialData = null, lan
       <form
         onSubmit={(e) => {
           e.preventDefault();
-          const f = new FormData(e.target);
+          if (!isValid) return;
           onSubmit({
-            name: f.get('name'),
-            category: f.get('category'),
-            village: f.get('village'),
-            description: f.get('description'),
-            rate: f.get('rate'),
-            unit: f.get('unit'),
-            mobilization: f.get('mobilization'),
-            latitude: Number(f.get('latitude')),
-            longitude: Number(f.get('longitude')),
-            buffer_minutes: Number(f.get('buffer')),
-            organization_id: f.get('organization') || null,
+            name: name.trim(),
+            category,
+            model: model.trim(),
+            village: village.trim(),
+            description: description.trim(),
+            rate: Number(rate),
+            unit,
+            mobilization: Number(mobilization),
+            latitude: Number(latitude),
+            longitude: Number(longitude),
+            buffer_minutes: Number(buffer),
+            organization_id: orgId || null,
             attachments,
             fuel_included: fuelIncluded,
             fuel_rate_extra: fuelIncluded ? Number(fuelRateExtra) : 0,
           });
         }}
       >
-        <FormField label={t('machineNameModel')}>
-          <input
-            name="name"
-            minLength="3"
-            maxLength="100"
-            defaultValue={initialData?.name || ''}
-            required
-            placeholder="e.g. Mahindra 575 DI (45 HP)"
-          />
-        </FormField>
+        <div className="form-grid">
+          <FormField label={t('machineName')}>
+            <input
+              name="name"
+              minLength="3"
+              maxLength="100"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              required
+              placeholder="e.g. Mahindra Tractor"
+            />
+            {nameError && <span style={{ color: '#dc2626', fontSize: '11px', display: 'block', marginTop: '4px' }}>{nameError}</span>}
+          </FormField>
+          <FormField label="Machine Model">
+            <input
+              name="model"
+              minLength="2"
+              maxLength="100"
+              value={model}
+              onChange={(e) => setModel(e.target.value)}
+              required
+              placeholder="e.g. 575 DI (45 HP)"
+            />
+            {modelError && <span style={{ color: '#dc2626', fontSize: '11px', display: 'block', marginTop: '4px' }}>{modelError}</span>}
+          </FormField>
+        </div>
 
         <div className="form-grid">
           <FormField label={t('categoryLabel')}>
-            <select name="category" defaultValue={initialData?.category || 'Tractor'}>
+            <select name="category" value={category} onChange={(e) => setCategory(e.target.value)}>
               {['Tractor', 'Rotavator', 'Harvester', 'Seed drill', 'Sprayer', 'Cultivator'].map(
                 (c) => (
                   <option key={c} value={c}>
@@ -105,10 +153,12 @@ export function MachineForm({ orgs = [], busy, onSubmit, initialData = null, lan
               name="village"
               minLength="2"
               maxLength="100"
-              defaultValue={initialData?.village || ''}
+              value={village}
+              onChange={(e) => setVillage(e.target.value)}
               required
               placeholder="e.g. Khanna, Ludhiana"
             />
+            {villageError && <span style={{ color: '#dc2626', fontSize: '11px', display: 'block', marginTop: '4px' }}>{villageError}</span>}
           </FormField>
         </div>
 
@@ -117,7 +167,8 @@ export function MachineForm({ orgs = [], busy, onSubmit, initialData = null, lan
             name="description"
             maxLength="1000"
             placeholder={t('specsPlaceholder')}
-            defaultValue={initialData?.description || ''}
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
           />
         </FormField>
 
@@ -129,12 +180,14 @@ export function MachineForm({ orgs = [], busy, onSubmit, initialData = null, lan
               min="0.01"
               max="100000"
               step="0.01"
-              defaultValue={initialData?.rate || ''}
+              value={rate}
+              onChange={(e) => setRate(e.target.value)}
               required
             />
+            {rateError && <span style={{ color: '#dc2626', fontSize: '11px', display: 'block', marginTop: '4px' }}>{rateError}</span>}
           </FormField>
           <FormField label={t('pricingUnit')}>
-            <select name="unit" defaultValue={initialData?.unit || 'hour'}>
+            <select name="unit" value={unit} onChange={(e) => setUnit(e.target.value)}>
               <option value="hour">{t('perHour')}</option>
               <option value="acre">{t('perAcre')}</option>
             </select>
@@ -146,9 +199,11 @@ export function MachineForm({ orgs = [], busy, onSubmit, initialData = null, lan
               min="0"
               max="100000"
               step="0.01"
-              defaultValue={initialData?.mobilization ?? 0}
+              value={mobilization}
+              onChange={(e) => setMobilization(e.target.value)}
               required
             />
+            {mobError && <span style={{ color: '#dc2626', fontSize: '11px', display: 'block', marginTop: '4px' }}>{mobError}</span>}
           </FormField>
           <FormField label={t('bufferLabel')}>
             <input
@@ -156,9 +211,11 @@ export function MachineForm({ orgs = [], busy, onSubmit, initialData = null, lan
               type="number"
               min="0"
               max="180"
-              defaultValue={initialData?.buffer_minutes ?? 15}
+              value={buffer}
+              onChange={(e) => setBuffer(e.target.value)}
               required
             />
+            {bufferError && <span style={{ color: '#dc2626', fontSize: '11px', display: 'block', marginTop: '4px' }}>{bufferError}</span>}
           </FormField>
           <FormField label={t('latitudeLabel')}>
             <input
@@ -167,7 +224,8 @@ export function MachineForm({ orgs = [], busy, onSubmit, initialData = null, lan
               min="-90"
               max="90"
               step="any"
-              defaultValue={initialData?.latitude ?? 30.901}
+              value={latitude}
+              onChange={(e) => setLatitude(e.target.value)}
               required
             />
           </FormField>
@@ -178,7 +236,8 @@ export function MachineForm({ orgs = [], busy, onSubmit, initialData = null, lan
               min="-180"
               max="180"
               step="any"
-              defaultValue={initialData?.longitude ?? 75.857}
+              value={longitude}
+              onChange={(e) => setLongitude(e.target.value)}
               required
             />
           </FormField>
@@ -350,7 +409,7 @@ export function MachineForm({ orgs = [], busy, onSubmit, initialData = null, lan
           </select>
         </FormField>
 
-        <button className="primary full" disabled={busy}>
+        <button className="primary full" disabled={busy || !isValid}>
           {isEdit ? 'Save Changes' : t('publishListingBtn')}{' '}
           {isEdit ? <Check size={17} /> : <Plus size={17} />}
         </button>

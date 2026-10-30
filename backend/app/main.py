@@ -6,7 +6,7 @@ from decimal import Decimal
 from typing import Literal
 from fastapi import FastAPI, HTTPException, Request, Response, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field, AwareDatetime, EmailStr
+from pydantic import BaseModel, Field, AwareDatetime, EmailStr, field_validator
 from psycopg.errors import ExclusionViolation
 from psycopg.types.json import Jsonb
 from dotenv import load_dotenv
@@ -19,7 +19,7 @@ else:
     load_dotenv(override=False)
 
 from app.db import db, one, many
-from app.domain import bill, meter_quantity, optimize, find_next_available_slot
+from app.domain import bill, meter_quantity, optimize, find_next_available_slot, validate_booking_interval, MIN_BOOKING_DURATION, MAX_BOOKING_DURATION
 from app.sms import provider
 from app.email_auth import email_mode, send_email, verify_google
 
@@ -59,6 +59,15 @@ def user(request:Request):
         u=one(c,'SELECT u.* FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=%s AND s.expires_at>now()',(digest(token),))
     require(u is not None,'Sign in first',401)
     return u
+
+def optional_user(request:Request):
+    token=request.cookies.get('ys_session','')
+    if not token: return None
+    try:
+        with db() as c:
+            return one(c,'SELECT u.* FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=%s AND s.expires_at>now()',(digest(token),))
+    except Exception:
+        return None
 
 def throttle(c,key,limit,seconds):
     c.execute('SELECT pg_advisory_xact_lock(hashtextextended(%s,0))',(key,))
@@ -227,6 +236,7 @@ class Attachment(BaseModel):
 class Machine(BaseModel):
     name:str=Field(min_length=3,max_length=100)
     category:str=Field(min_length=2,max_length=50)
+    model:str=Field(default='Standard',min_length=2,max_length=100)
     description:str=Field(default='',max_length=1000)
     village:str=Field(min_length=2,max_length=100)
     latitude:float=Field(ge=-90,le=90,allow_inf_nan=False)
@@ -240,7 +250,33 @@ class Machine(BaseModel):
     fuel_included:bool=Field(default=False)
     fuel_rate_extra:Decimal=Field(default=0,ge=0,le=50000,max_digits=12,decimal_places=2)
 
-MACHINE_SELECT='''SELECT m.id,m.owner_id,m.organization_id,m.name,m.category,m.description,m.village,m.rate,m.unit,m.mobilization,m.buffer_minutes,m.active,COALESCE(m.attachments, '[]'::jsonb) AS attachments,COALESCE(m.fuel_included, false) AS fuel_included,COALESCE(m.fuel_rate_extra, 0) AS fuel_rate_extra,u.name AS owner_name,u.phone AS owner_phone,ST_Y(m.location::geometry) AS latitude,ST_X(m.location::geometry) AS longitude,
+    @field_validator('name','category','model','village',mode='before')
+    @classmethod
+    def strip_and_validate_text(cls, v):
+        if v is None: raise ValueError('Field cannot be null')
+        s = str(v).strip()
+        if not s: raise ValueError('Field cannot be empty or whitespace-only')
+        return s
+
+    @field_validator('rate')
+    @classmethod
+    def check_rate(cls, v):
+        if v <= 0: raise ValueError('Rate must be greater than zero')
+        return v
+
+    @field_validator('buffer_minutes')
+    @classmethod
+    def check_buffer(cls, v):
+        if v < 0: raise ValueError('Buffer cannot be negative')
+        return v
+
+    @field_validator('mobilization','fuel_rate_extra')
+    @classmethod
+    def check_nonneg(cls, v):
+        if v < 0: raise ValueError('Amount cannot be negative')
+        return v
+
+MACHINE_SELECT='''SELECT m.id,m.owner_id,m.organization_id,m.name,m.category,COALESCE(m.model, 'Standard') AS model,m.description,m.village,m.rate,m.unit,m.mobilization,m.buffer_minutes,m.active,COALESCE(m.is_active, m.active) AS is_active,COALESCE(m.attachments, '[]'::jsonb) AS attachments,COALESCE(m.fuel_included, false) AS fuel_included,COALESCE(m.fuel_rate_extra, 0) AS fuel_rate_extra,u.name AS owner_name,u.phone AS owner_phone,ST_Y(m.location::geometry) AS latitude,ST_X(m.location::geometry) AS longitude,
 COALESCE((SELECT ROUND(AVG(r.score)::numeric, 1) FROM ratings r JOIN bookings b ON b.id=r.booking_id WHERE b.machine_id=m.id AND r.target_id=m.owner_id), 0) AS rating_avg,
 COALESCE((SELECT COUNT(*) FROM ratings r JOIN bookings b ON b.id=r.booking_id WHERE b.machine_id=m.id AND r.target_id=m.owner_id), 0) AS rating_count,
 COALESCE((SELECT array_agg(DISTINCT badge) FROM ratings r JOIN bookings b ON b.id=r.booking_id, unnest(r.badges) AS badge WHERE b.machine_id=m.id AND r.target_id=m.owner_id), ARRAY[]::text[]) AS badges
@@ -253,12 +289,13 @@ def create_machine(p:Machine,u=Depends(user)):
             require(one(c,'SELECT id FROM organizations WHERE id=%s AND manager_id=%s',(p.organization_id,u['id'])) is not None)
         ident=uid()
         att_json=Jsonb([a.model_dump(mode='json') for a in p.attachments])
-        c.execute('INSERT INTO machines(id,owner_id,organization_id,name,category,description,village,location,rate,unit,mobilization,buffer_minutes,attachments,fuel_included,fuel_rate_extra) VALUES(%s,%s,%s,%s,%s,%s,%s,ST_SetSRID(ST_MakePoint(%s,%s),4326)::geography,%s,%s,%s,%s,%s,%s,%s)',(ident,u['id'],p.organization_id,p.name,p.category,p.description,p.village,p.longitude,p.latitude,p.rate,p.unit,p.mobilization,p.buffer_minutes,att_json,p.fuel_included,p.fuel_rate_extra))
+        c.execute('INSERT INTO machines(id,owner_id,organization_id,name,category,model,description,village,location,rate,unit,mobilization,buffer_minutes,attachments,fuel_included,fuel_rate_extra,active,is_active) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,ST_SetSRID(ST_MakePoint(%s,%s),4326)::geography,%s,%s,%s,%s,%s,%s,%s,true,true)',(ident,u['id'],p.organization_id,p.name,p.category,p.model,p.description,p.village,p.longitude,p.latitude,p.rate,p.unit,p.mobilization,p.buffer_minutes,att_json,p.fuel_included,p.fuel_rate_extra))
         return one(c,MACHINE_SELECT+' WHERE m.id=%s',(ident,))
 
 class MachineUpdate(BaseModel):
     name:str|None=Field(default=None,min_length=3,max_length=100)
     category:str|None=Field(default=None,min_length=2,max_length=50)
+    model:str|None=Field(default=None,min_length=2,max_length=100)
     description:str|None=Field(default=None,max_length=1000)
     village:str|None=Field(default=None,min_length=2,max_length=100)
     latitude:float|None=Field(default=None,ge=-90,le=90,allow_inf_nan=False)
@@ -268,10 +305,32 @@ class MachineUpdate(BaseModel):
     mobilization:Decimal|None=Field(default=None,ge=0,le=100000,max_digits=12,decimal_places=2)
     buffer_minutes:int|None=Field(default=None,ge=0,le=180)
     active:bool|None=None
+    is_active:bool|None=None
     organization_id:UUID|None=None
     attachments:list[Attachment]|None=None
     fuel_included:bool|None=None
     fuel_rate_extra:Decimal|None=Field(default=None,ge=0,le=50000,max_digits=12,decimal_places=2)
+
+    @field_validator('name','category','model','village',mode='before')
+    @classmethod
+    def strip_and_validate_update_text(cls, v):
+        if v is None: return None
+        s = str(v).strip()
+        if not s: raise ValueError('Field cannot be empty or whitespace-only')
+        return s
+
+class MachineStatusUpdate(BaseModel):
+    is_active:bool
+
+@app.patch('/api/machines/{ident}/status')
+@app.post('/api/machines/{ident}/status')
+def update_machine_status(ident:UUID,p:MachineStatusUpdate,u=Depends(user)):
+    with db() as c:
+        m=one(c,'SELECT * FROM machines WHERE id=%s FOR UPDATE',(ident,))
+        require(m is not None,'Machine not found',404)
+        require(m['owner_id']==u['id'],'Forbidden: not machine owner',403)
+        c.execute('UPDATE machines SET active=%s, is_active=%s WHERE id=%s',(p.is_active,p.is_active,ident))
+        return one(c,MACHINE_SELECT+' WHERE m.id=%s',(ident,))
 
 @app.patch('/api/machines/{ident}')
 def update_machine(ident:UUID,p:MachineUpdate,u=Depends(user)):
@@ -282,7 +341,7 @@ def update_machine(ident:UUID,p:MachineUpdate,u=Depends(user)):
         if p.organization_id is not None:
             require(one(c,'SELECT id FROM organizations WHERE id=%s AND manager_id=%s',(p.organization_id,u['id'])) is not None)
         updates,args=[],[]
-        fields=['name','category','description','village','rate','unit','mobilization','buffer_minutes','active','organization_id','fuel_included','fuel_rate_extra']
+        fields=['name','category','model','description','village','rate','unit','mobilization','buffer_minutes','active','is_active','organization_id','fuel_included','fuel_rate_extra']
         if p.attachments is not None:
             updates.append('attachments=%s')
             args.append(Jsonb([a.model_dump(mode='json') for a in p.attachments]))
@@ -291,6 +350,12 @@ def update_machine(ident:UUID,p:MachineUpdate,u=Depends(user)):
             if val is not None:
                 updates.append(f'{field}=%s')
                 args.append(val)
+                if field == 'active' and p.is_active is None:
+                    updates.append('is_active=%s')
+                    args.append(val)
+                elif field == 'is_active' and p.active is None:
+                    updates.append('active=%s')
+                    args.append(val)
         if p.latitude is not None and p.longitude is not None:
             updates.append('location=ST_SetSRID(ST_MakePoint(%s,%s),4326)::geography')
             args.extend([p.longitude,p.latitude])
@@ -299,17 +364,26 @@ def update_machine(ident:UUID,p:MachineUpdate,u=Depends(user)):
             c.execute(f"UPDATE machines SET {','.join(updates)} WHERE id=%s",args)
         return one(c,MACHINE_SELECT+' WHERE m.id=%s',(ident,))
 @app.get('/api/machines')
-def machines(latitude:float=30.901,longitude:float=75.857,radius:int=5,category:str=''):
+def machines(latitude:float=30.901,longitude:float=75.857,radius:int=5,category:str='',u=Depends(optional_user)):
     require(-90<=latitude<=90 and -180<=longitude<=180 and 1<=radius<=50,'Invalid search radius or location',422)
     with db() as c:
-        return many(c,MACHINE_SELECT+''' WHERE m.active AND (%s='' OR m.category=%s) AND ST_DWithin(m.location,ST_SetSRID(ST_MakePoint(%s,%s),4326)::geography,%s) ORDER BY ST_Distance(m.location,ST_SetSRID(ST_MakePoint(%s,%s),4326)::geography) LIMIT 100''',(category,category,longitude,latitude,radius*1000,longitude,latitude))
+        owner_filter = " AND m.owner_id != %s" if u else ""
+        params = [category, category, longitude, latitude, radius*1000]
+        if u:
+            params.append(u['id'])
+        params.extend([longitude, latitude])
+        return many(c,MACHINE_SELECT+f''' WHERE m.active AND COALESCE(m.is_active, true) AND (%s='' OR m.category=%s) AND ST_DWithin(m.location,ST_SetSRID(ST_MakePoint(%s,%s),4326)::geography,%s){owner_filter} ORDER BY ST_Distance(m.location,ST_SetSRID(ST_MakePoint(%s,%s),4326)::geography) LIMIT 100''',tuple(params))
 @app.get('/api/fleet')
 def fleet(u=Depends(user)):
     with db() as c: return many(c,MACHINE_SELECT+' WHERE m.owner_id=%s ORDER BY m.created_at',(u['id'],))
 @app.get('/api/machines/{ident}/availability')
-def availability(ident:UUID,duration_minutes:int=120):
+def availability(ident:UUID,duration_minutes:int=120,u=Depends(optional_user)):
     with db() as c:
-        m=one(c,'SELECT buffer_minutes FROM machines WHERE id=%s',(ident,))
+        m=one(c,'SELECT id,owner_id,buffer_minutes,active,COALESCE(is_active,true) AS is_active FROM machines WHERE id=%s',(ident,))
+        require(m is not None,'Machine not found',404)
+        require(m['active'] and m['is_active'],'This equipment is currently unavailable.',400)
+        if u and m['owner_id']==u['id']:
+            raise HTTPException(403,'You cannot book your own equipment.')
         buffer=m['buffer_minutes'] if m else 15
         reserved=many(c,"SELECT start_at,reserved_until AS end_at,reserved_until,status,quantity FROM bookings WHERE machine_id=%s AND status IN ('PENDING','APPROVED','IN_PROGRESS') AND reserved_until>now() ORDER BY start_at",(ident,))
         maintenance=many(c,'SELECT start_at,end_at,reason FROM maintenance WHERE machine_id=%s AND end_at>now() ORDER BY start_at',(ident,))
@@ -348,7 +422,10 @@ class Booking(BaseModel):
     fuel_included:bool=Field(default=False)
 
 def quote_for(p,m):
-    require(p.end_at>p.start_at and p.end_at-p.start_at<=timedelta(days=2),'Choose a duration between 0 and 48 hours',422)
+    try:
+        validate_booking_interval(p.start_at, p.end_at)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
     quantity=Decimal(str((p.end_at-p.start_at).total_seconds()))/3600 if m['unit']=='hour' else p.acres
     require(quantity is not None,'Acreage required',422)
     addons_rate=Decimal('0')
@@ -363,14 +440,24 @@ def quote_for(p,m):
     return quantity,b,addons_rate,fuel_extra
 @app.post('/api/quote')
 def quote(p:Booking,u=Depends(user)):
+    try:
+        validate_booking_interval(p.start_at, p.end_at)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
     with db() as c:
-        m=one(c,'SELECT * FROM machines WHERE id=%s AND active',(p.machine_id,))
-        require(m is not None,'Machine unavailable',404)
+        m=one(c,'SELECT * FROM machines WHERE id=%s',(p.machine_id,))
+        require(m is not None,'Machine not found',404)
+        require(m['active'] and m.get('is_active', True),'This equipment is currently unavailable.',400)
+        require(m['owner_id']!=u['id'],'You cannot book your own equipment.',403)
         q,b,addons_rate,fuel_extra=quote_for(p,m)
         return {**b,'quantity':q,'unit':m['unit'],'rate':m['rate'],'addons_rate':addons_rate,'fuel_extra':fuel_extra,'payment':'Directly to owner outside platform'}
 @app.post('/api/bookings')
 def book(p:Booking,u=Depends(user)):
     require('farmer' in u['roles'],'Farmer role required')
+    try:
+        validate_booking_interval(p.start_at, p.end_at)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
     req_hash=hashlib.sha256(p.model_dump_json().encode()).hexdigest()
     with db() as c:
         c.execute('SELECT pg_advisory_xact_lock(hashtextextended(%s,0))',(str(u['id'])+str(p.idempotency_key),))
@@ -378,10 +465,10 @@ def book(p:Booking,u=Depends(user)):
         if existing:
             require(existing['request_hash']==req_hash,'Idempotency key reused with changed request',409)
             return existing
-        require(p.start_at>datetime.now(timezone.utc),'Start time must be in the future',422)
         m=one(c,'SELECT * FROM machines WHERE id=%s FOR UPDATE',(p.machine_id,))
-        require(m and m['active'],'Machine unavailable',404)
-        require(m['owner_id']!=u['id'],'Cannot book your own machine',422)
+        require(m is not None,'Machine not found',404)
+        require(m['active'] and m.get('is_active', True),'This equipment is currently unavailable.',400)
+        require(m['owner_id']!=u['id'],'You cannot book your own equipment.',403)
         quantity,b,addons_rate,fuel_extra=quote_for(p,m)
         reserved_until=p.end_at+timedelta(minutes=m['buffer_minutes'])
         blocked=one(c,"SELECT id FROM maintenance WHERE machine_id=%s AND tstzrange(start_at,end_at,'[)') && tstzrange(%s,%s,'[)')",(p.machine_id,p.start_at,reserved_until))

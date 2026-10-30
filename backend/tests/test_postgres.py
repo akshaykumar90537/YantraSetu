@@ -205,3 +205,138 @@ def test_user_login_does_not_recreate_or_require_registration(database, monkeypa
         records = c.execute('SELECT * FROM users WHERE phone=%s', (phone,)).fetchall()
         assert len(records) == 1
 
+def test_owner_cannot_view_or_book_own_equipment(database, monkeypatch):
+    from contextlib import contextmanager
+    from datetime import datetime, timezone, timedelta
+    from psycopg.rows import dict_row
+    from fastapi.testclient import TestClient
+    from app import main
+    connect, farmer, machine, operator, owner = database
+    @contextmanager
+    def isolated_db():
+        with connect() as c:
+            c.row_factory = dict_row
+            yield c
+    monkeypatch.setattr(main, 'db', isolated_db)
+    headers = {'X-Requested-With': 'YantraSetu', 'Origin': 'http://localhost:5173'}
+    
+    # 1. Sign in as owner (must have owner role)
+    with connect() as c:
+        c.execute("UPDATE users SET roles=ARRAY['owner','farmer'] WHERE id=%s", (owner,))
+        c.execute("UPDATE users SET roles=ARRAY['farmer'] WHERE id=%s", (farmer,))
+
+    owner_client = TestClient(main.app, headers=headers)
+    r_ch = owner_client.post('/api/auth/request', json={'phone': '+919000000002'}).json()
+    owner_client.post('/api/auth/verify', json={'challenge_id': r_ch['challenge_id'], 'code': r_ch['development_code']})
+
+    # 2. Search machines as owner: owner's own machine must be excluded
+    res = owner_client.get('/api/machines?latitude=30&longitude=75&radius=10')
+    assert res.status_code == 200
+    owner_machines = [m for m in res.json() if m['id'] == str(machine)]
+    assert len(owner_machines) == 0, "Owner must not see their own machine in search results"
+
+    # 3. Owner attempts to book their own machine: must return 403 "You cannot book your own equipment."
+    start = (datetime.now(timezone.utc) + timedelta(hours=2)).isoformat()
+    end = (datetime.now(timezone.utc) + timedelta(hours=4)).isoformat()
+    book_attempt = owner_client.post('/api/bookings', json={
+        'machine_id': str(machine),
+        'start_at': start,
+        'end_at': end,
+        'latitude': 30.0,
+        'longitude': 75.0,
+        'idempotency_key': str(uuid4())
+    })
+    assert book_attempt.status_code == 403
+    assert book_attempt.json()['detail'] == "You cannot book your own equipment."
+
+    # 4. Sign in as non-owner (farmer)
+    farmer_client = TestClient(main.app, headers=headers)
+    r_ch_f = farmer_client.post('/api/auth/request', json={'phone': '+919000000001'}).json()
+    farmer_client.post('/api/auth/verify', json={'challenge_id': r_ch_f['challenge_id'], 'code': r_ch_f['development_code']})
+
+    # 5. Non-owner searches: machine is visible
+    res_f = farmer_client.get('/api/machines?latitude=30&longitude=75&radius=10')
+    assert res_f.status_code == 200
+    farmer_machines = [m for m in res_f.json() if m['id'] == str(machine)]
+    assert len(farmer_machines) == 1, "Non-owner must be able to view the machine"
+
+    # 6. Non-owner can book normally
+    book_ok = farmer_client.post('/api/bookings', json={
+        'machine_id': str(machine),
+        'start_at': start,
+        'end_at': end,
+        'latitude': 30.0,
+        'longitude': 75.0,
+        'idempotency_key': str(uuid4())
+    })
+    assert book_ok.status_code == 200
+
+def test_equipment_delisting_and_reactivation(database, monkeypatch):
+    from contextlib import contextmanager
+    from datetime import datetime, timezone, timedelta
+    from psycopg.rows import dict_row
+    from fastapi.testclient import TestClient
+    from app import main
+    connect, farmer, machine, operator, owner = database
+    @contextmanager
+    def isolated_db():
+        with connect() as c:
+            c.row_factory = dict_row
+            yield c
+    monkeypatch.setattr(main, 'db', isolated_db)
+    headers = {'X-Requested-With': 'YantraSetu', 'Origin': 'http://localhost:5173'}
+
+    with connect() as c:
+        c.execute("UPDATE users SET roles=ARRAY['owner','farmer'] WHERE id=%s", (owner,))
+        c.execute("UPDATE users SET roles=ARRAY['farmer'] WHERE id=%s", (farmer,))
+
+    # Sign in as owner
+    owner_client = TestClient(main.app, headers=headers)
+    r_ch = owner_client.post('/api/auth/request', json={'phone': '+919000000002'}).json()
+    owner_client.post('/api/auth/verify', json={'challenge_id': r_ch['challenge_id'], 'code': r_ch['development_code']})
+
+    # Delist equipment
+    delist_res = owner_client.patch(f'/api/machines/{machine}/status', json={'is_active': False})
+    assert delist_res.status_code == 200
+    assert delist_res.json()['is_active'] is False
+
+    # Sign in as farmer
+    farmer_client = TestClient(main.app, headers=headers)
+    r_ch_f = farmer_client.post('/api/auth/request', json={'phone': '+919000000001'}).json()
+    farmer_client.post('/api/auth/verify', json={'challenge_id': r_ch_f['challenge_id'], 'code': r_ch_f['development_code']})
+
+    # Delisted equipment is hidden from search
+    res = farmer_client.get('/api/machines?latitude=30&longitude=75&radius=10')
+    assert not any(m['id'] == str(machine) for m in res.json())
+
+    # Booking delisted equipment is rejected with 400
+    start = (datetime.now(timezone.utc) + timedelta(hours=5)).isoformat()
+    end = (datetime.now(timezone.utc) + timedelta(hours=7)).isoformat()
+    book_fail = farmer_client.post('/api/bookings', json={
+        'machine_id': str(machine),
+        'start_at': start,
+        'end_at': end,
+        'latitude': 30.0,
+        'longitude': 75.0,
+        'idempotency_key': str(uuid4())
+    })
+    assert book_fail.status_code == 400
+    assert book_fail.json()['detail'] == "This equipment is currently unavailable."
+
+    # Relist equipment
+    relist_res = owner_client.patch(f'/api/machines/{machine}/status', json={'is_active': True})
+    assert relist_res.status_code == 200
+    assert relist_res.json()['is_active'] is True
+
+    # Now booking succeeds
+    book_success = farmer_client.post('/api/bookings', json={
+        'machine_id': str(machine),
+        'start_at': start,
+        'end_at': end,
+        'latitude': 30.0,
+        'longitude': 75.0,
+        'idempotency_key': str(uuid4())
+    })
+    assert book_success.status_code == 200
+
+

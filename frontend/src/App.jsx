@@ -230,6 +230,14 @@ function Workspace({ initialUser, onLogout }) {
       setModal({ type: 'login' });
       return;
     }
+    if (m.owner_id === u.id) {
+      setError('You cannot book your own equipment.');
+      return;
+    }
+    if (m.active === false || m.is_active === false) {
+      setError('This equipment is currently unavailable.');
+      return;
+    }
     setModal({ type: 'book', machine: m });
   }
 
@@ -519,81 +527,90 @@ function Workspace({ initialUser, onLogout }) {
                 <small>{t('howNote')}</small>
               </section>
 
-              <div className="section-title">
-                <div>
-                  <div className="eyebrow muted">{t('nearSubtitle')}</div>
-                  <h2>{t('near')}</h2>
-                  <p>
-                    {cached
-                      ? t('cachedListings')
-                      : t('listingsCount', { count: machines.length, radius })}
-                  </p>
-                </div>
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  <button
-                    type="button"
-                    className={showMap ? 'primary' : 'outline'}
-                    onClick={() => setShowMap(!showMap)}
-                    style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
-                  >
-                    <MapPin size={16} />
-                    {showMap ? 'Hide Map' : 'Show Map'}
-                  </button>
-                  <button
-                    className="outline"
-                    onClick={() => (u ? setModal({ type: 'machine' }) : setModal({ type: 'login' }))}
-                  >
-                    <Plus size={16} /> {t('listMachine')}
-                  </button>
-                </div>
-              </div>
+              {(() => {
+                const visibleMachines = machines.filter(
+                  (m) => m.active !== false && m.is_active !== false && (!u || m.owner_id !== u.id)
+                );
+                return (
+                  <>
+                    <div className="section-title">
+                      <div>
+                        <div className="eyebrow muted">{t('nearSubtitle')}</div>
+                        <h2>{t('near')}</h2>
+                        <p>
+                          {cached
+                            ? t('cachedListings')
+                            : t('listingsCount', { count: visibleMachines.length, radius })}
+                        </p>
+                      </div>
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <button
+                          type="button"
+                          className={showMap ? 'primary' : 'outline'}
+                          onClick={() => setShowMap(!showMap)}
+                          style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+                        >
+                          <MapPin size={16} />
+                          {showMap ? 'Hide Map' : 'Show Map'}
+                        </button>
+                        <button
+                          className="outline"
+                          onClick={() => (u ? setModal({ type: 'machine' }) : setModal({ type: 'login' }))}
+                        >
+                          <Plus size={16} /> {t('listMachine')}
+                        </button>
+                      </div>
+                    </div>
 
-              {showMap && (
-                <div style={{ marginBottom: '24px' }}>
-                  <MapPicker
-                    center={[Number(lat) || 30.901, Number(lon) || 75.857]}
-                    radius={Number(radius) || 5}
-                    machines={machines}
-                    onSelectLocation={(newLat, newLon) => {
-                      setLat(newLat);
-                      setLon(newLon);
-                      const key = `ys-search-${newLat}-${newLon}-${radius}-${category}`;
-                      api(
-                        `/machines?latitude=${newLat}&longitude=${newLon}&radius=${radius}&category=${encodeURIComponent(category)}`
-                      )
-                        .then((data) => {
-                          setMachines(data);
-                          localStorage.setItem(key, JSON.stringify({ at: new Date().toISOString(), data }));
-                        })
-                        .catch(() => {});
-                    }}
-                    onSelectMachine={openBooking}
-                    height="380px"
-                    showLocate={true}
-                    lang={lang}
-                  />
-                </div>
-              )}
+                    {showMap && (
+                      <div style={{ marginBottom: '24px' }}>
+                        <MapPicker
+                          center={[Number(lat) || 30.901, Number(lon) || 75.857]}
+                          radius={Number(radius) || 5}
+                          machines={visibleMachines}
+                          onSelectLocation={(newLat, newLon) => {
+                            setLat(newLat);
+                            setLon(newLon);
+                            const key = `ys-search-${newLat}-${newLon}-${radius}-${category}`;
+                            api(
+                              `/machines?latitude=${newLat}&longitude=${newLon}&radius=${radius}&category=${encodeURIComponent(category)}`
+                            )
+                              .then((data) => {
+                                setMachines(data);
+                                localStorage.setItem(key, JSON.stringify({ at: new Date().toISOString(), data }));
+                              })
+                              .catch(() => {});
+                          }}
+                          onSelectMachine={openBooking}
+                          height="380px"
+                          showLocate={true}
+                          lang={lang}
+                        />
+                      </div>
+                    )}
 
-              <div className="cards">
-                {machines.map((m, i) => (
-                  <MachineCard
-                    key={m.id}
-                    machine={m}
-                    index={i}
-                    onBook={openBooking}
-                    lang={lang}
-                  />
-                ))}
-              </div>
+                    <div className="cards">
+                      {visibleMachines.map((m, i) => (
+                        <MachineCard
+                          key={m.id}
+                          machine={m}
+                          index={i}
+                          onBook={openBooking}
+                          lang={lang}
+                        />
+                      ))}
+                    </div>
 
-              {searched && !machines.length && (
-                <div className="empty">
-                  <Tractor size={38} />
-                  <h3>{t('noMachineryFound')}</h3>
-                  <p>{t('noMachinerySub')}</p>
-                </div>
-              )}
+                    {searched && !visibleMachines.length && (
+                      <div className="empty">
+                        <Tractor size={38} />
+                        <h3>{t('noMachineryFound')}</h3>
+                        <p>{t('noMachinerySub')}</p>
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
 
               <section className="link-promo">
                 <div className="link-icon">
@@ -757,44 +774,86 @@ function Workspace({ initialUser, onLogout }) {
                               <th>{t('equipmentCol')}</th>
                               <th>{t('locationCol')}</th>
                               <th>{t('rateCol')}</th>
+                              <th>Status</th>
                               <th>{t('availabilityCol')}</th>
+                              <th>Listing</th>
                             </tr>
                           </thead>
                           <tbody>
-                            {fleet.map((m) => (
-                              <tr key={m.id}>
-                                <td>
-                                  <strong>{m.name}</strong>
-                                  <small>{m.category}</small>
-                                </td>
-                                <td>{m.village}</td>
-                                <td>
-                                  {INR(m.rate)} / {m.unit === 'hour' ? t('perHour') : t('perAcre')}
-                                </td>
-                                <td>
-                                  <button
-                                    className="outline"
-                                    onClick={() =>
-                                      run(async () =>
-                                        setModal({
-                                          type: 'availability',
-                                          data: await api('/machines/' + m.id + '/availability'),
-                                          machine: m,
+                            {fleet.map((m) => {
+                              const isActive = m.active !== false && m.is_active !== false;
+                              return (
+                                <tr key={m.id}>
+                                  <td>
+                                    <strong>{m.name}</strong>
+                                    <small>{m.category} {m.model ? `· ${m.model}` : ''}</small>
+                                  </td>
+                                  <td>{m.village}</td>
+                                  <td>
+                                    {INR(m.rate)} / {m.unit === 'hour' ? t('perHour') : t('perAcre')}
+                                  </td>
+                                  <td>
+                                    <span
+                                      style={{
+                                        background: isActive ? '#dcfce7' : '#f1f5f9',
+                                        color: isActive ? '#15803d' : '#64748b',
+                                        border: `1px solid ${isActive ? '#bbf7d0' : '#cbd5e1'}`,
+                                        padding: '3px 8px',
+                                        borderRadius: '12px',
+                                        fontSize: '11px',
+                                        fontWeight: '700',
+                                        display: 'inline-block',
+                                      }}
+                                    >
+                                      {isActive ? 'Active' : 'Delisted'}
+                                    </span>
+                                  </td>
+                                  <td>
+                                    <button
+                                      className="outline"
+                                      disabled={!isActive}
+                                      onClick={() =>
+                                        run(async () =>
+                                          setModal({
+                                            type: 'availability',
+                                            data: await api('/machines/' + m.id + '/availability'),
+                                            machine: m,
+                                          })
+                                        )
+                                      }
+                                    >
+                                      {t('calendarBtn')}
+                                    </button>
+                                    <button
+                                      className="text-button"
+                                      disabled={!isActive}
+                                      onClick={() => setModal({ type: 'maintenance', machine: m })}
+                                    >
+                                      {t('blockTimeBtn')}
+                                    </button>
+                                  </td>
+                                  <td>
+                                    <button
+                                      className="outline"
+                                      style={{
+                                        color: isActive ? '#b91c1c' : '#15803d',
+                                        borderColor: isActive ? '#fca5a5' : '#86efac',
+                                        fontSize: '11px',
+                                        padding: '5px 10px',
+                                      }}
+                                      onClick={() =>
+                                        run(async () => {
+                                          await api(`/machines/${m.id}/status`, { is_active: !isActive }, 'PATCH');
+                                          await load();
                                         })
-                                      )
-                                    }
-                                  >
-                                    {t('calendarBtn')}
-                                  </button>
-                                  <button
-                                    className="text-button"
-                                    onClick={() => setModal({ type: 'maintenance', machine: m })}
-                                  >
-                                    {t('blockTimeBtn')}
-                                  </button>
-                                </td>
-                              </tr>
-                            ))}
+                                      }
+                                    >
+                                      {isActive ? 'Delist' : 'Relist'}
+                                    </button>
+                                  </td>
+                                </tr>
+                              );
+                            })}
                           </tbody>
                         </table>
                       </div>
