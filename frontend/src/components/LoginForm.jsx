@@ -34,13 +34,21 @@ function saveCachedUserName(contact, name) {
   } catch {}
 }
 
+const DEFAULT_GOOGLE_CLIENT_ID =
+  import.meta.env.VITE_GOOGLE_CLIENT_ID ||
+  '330906384238-o1g8d57b9cu57bl87edalcg1a83o2b0v.apps.googleusercontent.com';
+
 export function LoginForm({ busy, run, onUser, lang = 'en', setLang }) {
-  const [config, setConfig] = useState({ phone: true, email: 'development' });
+  const [config, setConfig] = useState({
+    phone: true,
+    email: 'smtp',
+    google_client_id: DEFAULT_GOOGLE_CLIENT_ID,
+  });
   const [mode, setMode] = useState('phone'); // User can toggle between Phone and Email
   const [challenge, setChallenge] = useState(null);
   const [destination, setDestination] = useState('');
   const [googleError, setGoogleError] = useState('');
-  const [showGoogleGuide, setShowGoogleGuide] = useState(false);
+  const [googleReady, setGoogleReady] = useState(false);
   const [rawPhone, setRawPhone] = useState('9000000001');
   const [phoneError, setPhoneError] = useState('');
   const googleButton = useRef(null);
@@ -50,24 +58,32 @@ export function LoginForm({ busy, run, onUser, lang = 'en', setLang }) {
     run(async () => {
       try {
         const c = await api('/auth/config');
-        if (c) setConfig(c);
+        if (c) {
+          setConfig({
+            phone: c.phone ?? true,
+            email: c.email || 'smtp',
+            google_client_id: c.google_client_id || DEFAULT_GOOGLE_CLIENT_ID,
+          });
+        }
       } catch (e) {
-        setConfig({ phone: true, email: 'development' });
+        setConfig({
+          phone: true,
+          email: 'smtp',
+          google_client_id: DEFAULT_GOOGLE_CLIENT_ID,
+        });
       }
     });
   }, []);
 
   useEffect(() => {
-    if (!config?.google_client_id || challenge || mode !== 'email') return;
+    if (challenge || mode !== 'email') return;
     let cancelled = false;
-    let script;
-    async function init() {
+
+    function renderGis() {
+      if (!window.google?.accounts?.id || !googleButton.current || cancelled) return;
       try {
-        const { nonce } = await api('/auth/google/nonce', {});
-        if (cancelled) return;
         window.google.accounts.id.initialize({
-          client_id: config.google_client_id,
-          nonce,
+          client_id: config.google_client_id || DEFAULT_GOOGLE_CLIENT_ID,
           callback: ({ credential }) =>
             run(async () => {
               const result = await api('/auth/google', { credential });
@@ -75,32 +91,38 @@ export function LoginForm({ busy, run, onUser, lang = 'en', setLang }) {
               setChallenge(result);
             }),
         });
-        if (googleButton.current) {
-          window.google.accounts.id.renderButton(googleButton.current, {
-            theme: 'outline',
-            size: 'large',
-            text: 'continue_with',
-            width: 320,
-          });
-        }
-      } catch (e) {
-        if (!cancelled) setGoogleError(e.message);
+        window.google.accounts.id.renderButton(googleButton.current, {
+          theme: 'outline',
+          size: 'large',
+          text: 'continue_with',
+          width: 320,
+        });
+        setGoogleReady(true);
+      } catch (err) {
+        if (!cancelled) setGoogleError(err.message || 'Google Sign-In initialization failed.');
       }
     }
-    if (window.google?.accounts) init();
-    else {
-      script = document.createElement('script');
+
+    if (window.google?.accounts?.id) {
+      renderGis();
+    } else {
+      const script = document.createElement('script');
       script.src = 'https://accounts.google.com/gsi/client';
       script.async = true;
-      script.onload = init;
-      script.onerror = () => setGoogleError('Google sign-in could not load.');
+      script.defer = true;
+      script.onload = () => {
+        if (!cancelled) renderGis();
+      };
+      script.onerror = () => {
+        if (!cancelled) setGoogleError('Google sign-in could not load.');
+      };
       document.head.appendChild(script);
     }
+
     return () => {
       cancelled = true;
-      script?.remove();
     };
-  }, [config, challenge, mode]);
+  }, [config.google_client_id, challenge, mode]);
 
   // Restrict mobile number input to numbers only (0-9), max 10 digits
   const handlePhoneKeyDown = (e) => {
@@ -461,15 +483,19 @@ export function LoginForm({ busy, run, onUser, lang = 'en', setLang }) {
             <>
               {/* Google Sign-In Area */}
               <div style={{ marginBottom: '14px' }}>
-                {config?.google_client_id ? (
-                  <div style={{ display: 'flex', justifyContent: 'center' }}>
-                    <div ref={googleButton} className="google-button" />
-                  </div>
-                ) : (
+                <div style={{ display: 'flex', justifyContent: 'center', minHeight: '44px', width: '100%' }}>
+                  <div ref={googleButton} className="google-button" style={{ display: 'flex', justifyContent: 'center', width: '100%' }} />
+                </div>
+
+                {!googleReady && !googleError && (
                   <button
                     type="button"
                     className="outline full"
-                    onClick={() => setShowGoogleGuide(!showGoogleGuide)}
+                    onClick={() => {
+                      if (window.google?.accounts?.id) {
+                        window.google.accounts.id.prompt();
+                      }
+                    }}
                     style={{
                       display: 'flex',
                       alignItems: 'center',
@@ -492,18 +518,6 @@ export function LoginForm({ busy, run, onUser, lang = 'en', setLang }) {
                     </svg>
                     Continue with Google
                   </button>
-                )}
-
-                {showGoogleGuide && (
-                  <div className="banner" style={{ marginTop: '10px', fontSize: '11px', lineHeight: '1.6' }}>
-                    <Info size={16} style={{ flexShrink: 0 }} />
-                    <div>
-                      <strong>Google Sign-In configuration required:</strong>
-                      <p style={{ margin: '4px 0 0' }}>
-                        Set <code>GOOGLE_CLIENT_ID</code> in your <code>.env</code> file to enable Google authentication.
-                      </p>
-                    </div>
-                  </div>
                 )}
               </div>
 
@@ -538,15 +552,9 @@ export function LoginForm({ busy, run, onUser, lang = 'en', setLang }) {
                     defaultValue={destination || ''}
                   />
                 </FormField>
-                {config.email === 'smtp' ? (
-                  <div className="banner" style={{ fontSize: '11px' }}>
-                    A real verification OTP will be delivered to your inbox.
-                  </div>
-                ) : (
-                  <div className="banner" style={{ fontSize: '11px' }}>
-                    Local dev mode: codes are displayed on-screen until real SMTP is configured.
-                  </div>
-                )}
+                <div className="banner" style={{ fontSize: '11px' }}>
+                  A real verification OTP will be delivered to your inbox.
+                </div>
                 <button className="primary full" disabled={busy}>
                   Send verification code <ArrowRight size={17} />
                 </button>

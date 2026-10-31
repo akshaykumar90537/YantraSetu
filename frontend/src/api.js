@@ -196,12 +196,12 @@ function handleDemoFallback(path, data, method) {
 
   if (path === '/auth/config') {
     return {
-      email: 'development',
+      email: 'smtp',
       phone: true,
-      google_client_id: '',
+      google_client_id: '330906384238-o1g8d57b9cu57bl87edalcg1a83o2b0v.apps.googleusercontent.com',
       email_auth_enabled: true,
       phone_auth_enabled: true,
-      google_enabled: false,
+      google_enabled: true,
     };
   }
 
@@ -250,6 +250,18 @@ function handleDemoFallback(path, data, method) {
       message: 'Demo mode active. Use code: 123456',
       is_new_user: isNewUser,
       user_name: existing ? existing.name : undefined,
+    };
+  }
+
+  if (path === '/auth/google/nonce') {
+    return { nonce: 'demo-nonce-' + Math.random().toString(36).slice(2) };
+  }
+
+  if (path === '/auth/google') {
+    return {
+      challenge_id: 'demo-google-' + Date.now(),
+      email: (data && data.email) || 'akshaykumar90537@gmail.com',
+      is_new_user: false,
     };
   }
 

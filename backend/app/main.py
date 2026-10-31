@@ -1,4 +1,4 @@
-import os, secrets, hashlib, hmac, json, math
+import os, sys, secrets, hashlib, hmac, json, math
 from pathlib import Path
 from uuid import uuid4, UUID
 from datetime import datetime, timedelta, timezone, date
@@ -10,6 +10,11 @@ from pydantic import BaseModel, Field, AwareDatetime, EmailStr, field_validator
 from psycopg.errors import ExclusionViolation
 from psycopg.types.json import Jsonb
 from dotenv import load_dotenv
+
+# Ensure backend directory is in sys.path
+backend_dir = Path(__file__).resolve().parent.parent
+if str(backend_dir) not in sys.path:
+    sys.path.insert(0, str(backend_dir))
 
 # Automatically load .env if present in project root or parent
 env_path = Path(__file__).resolve().parents[2] / '.env'
