@@ -666,9 +666,13 @@ function handleDemoFallback(path, data, method) {
 
 export async function api(path, data, customMethod) {
   const method = customMethod || (data ? 'POST' : 'GET');
+  const apiBase =
+    typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_URL
+      ? import.meta.env.VITE_API_URL.replace(/\/$/, '')
+      : '';
 
   try {
-    const response = await fetch('/api' + path, {
+    const response = await fetch(apiBase + '/api' + path, {
       method,
       credentials: 'include',
       headers: {

@@ -68,6 +68,7 @@ def is_origin_allowed(origin: str | None) -> bool:
     if not origin: return True
     if origin in ALLOWED_ORIGINS: return True
     if origin.endswith('.vercel.app'): return True
+    if origin.startswith('http://localhost:') or origin.startswith('http://127.0.0.1:'): return True
     return False
 
 app.add_middleware(
@@ -201,7 +202,8 @@ class LoginVerify(Verify):
 def establish_session(c,u,response):
     token=secrets.token_urlsafe(32)
     c.execute("INSERT INTO sessions VALUES(%s,%s,now()+interval '24 hours')",(digest(token),u['id']))
-    response.set_cookie('ys_session',token,httponly=True,secure=not DEV,samesite='strict',max_age=86400,path='/')
+    samesite_val = 'none' if not DEV else 'lax'
+    response.set_cookie('ys_session',token,httponly=True,secure=not DEV,samesite=samesite_val,max_age=86400,path='/')
     return u
 
 class EmailLogin(BaseModel):
@@ -226,7 +228,8 @@ def google_nonce(request:Request,response:Response):
     with db() as c:
         throttle(c,'google-ip:'+request.client.host,20,600)
     nonce=secrets.token_urlsafe(32)
-    response.set_cookie('ys_google_nonce',nonce,httponly=True,secure=not DEV,samesite='strict',max_age=300,path='/api/auth/google')
+    samesite_val = 'none' if not DEV else 'lax'
+    response.set_cookie('ys_google_nonce',nonce,httponly=True,secure=not DEV,samesite=samesite_val,max_age=300,path='/api/auth/google')
     return {'nonce':nonce}
 
 @app.post('/api/auth/google')
@@ -337,7 +340,8 @@ def verify(p:LoginVerify,response:Response):
             DEMO_USERS[phone] = u
         token = secrets.token_urlsafe(32)
         DEMO_SESSIONS[digest(token)] = u['id']
-        response.set_cookie('ys_session', token, httponly=True, secure=not DEV, samesite='strict', max_age=86400, path='/')
+        samesite_val = 'none' if not DEV else 'lax'
+        response.set_cookie('ys_session', token, httponly=True, secure=not DEV, samesite=samesite_val, max_age=86400, path='/')
         return u
 
 @app.get('/api/me')
