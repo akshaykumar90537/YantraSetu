@@ -195,7 +195,6 @@ export function LoginForm({ busy, run, onUser, lang = 'en', setLang }) {
             onClick={() => {
               setMode('phone');
               setGoogleError('');
-              setShowGoogleGuide(false);
               setPhoneError('');
             }}
             style={{ flex: 1, padding: '9px 12px', fontSize: '12px' }}
@@ -209,7 +208,6 @@ export function LoginForm({ busy, run, onUser, lang = 'en', setLang }) {
             onClick={() => {
               setMode('email');
               setGoogleError('');
-              setShowGoogleGuide(false);
               setPhoneError('');
             }}
             style={{ flex: 1, padding: '9px 12px', fontSize: '12px' }}
