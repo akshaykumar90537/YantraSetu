@@ -35,10 +35,18 @@ Use `SMTP_SECURITY=ssl` and port 465 if your provider requires implicit TLS. TLS
 
 1. Create a Google Identity Services **Web application** client in your own Google Cloud project.
 2. Configure its authorized JavaScript origins to match your frontend origin exactly (for local development, `http://localhost:5173`). Add your actual HTTPS origin when deploying.
-3. Set `GOOGLE_CLIENT_ID` in the backend environment and configure email delivery above. Restart the backend. The frontend reads the public client ID from `/api/auth/config`; no client secret is needed for this flow.
-4. Click Continue with Google, select your account, then enter the separate YantraSetu email code. New users also enter their name and select roles.
+3. Set `GOOGLE_CLIENT_ID` in the backend environment. Restart the backend. The frontend reads the public client ID from `/api/auth/config`; no client secret is needed for this flow. Authorize `http://127.0.0.1:5173` as well if using that local address.
+4. Click Continue with Google and select your account. Gmail and verified Workspace identities open the dashboard directly. Previously linked identities also sign in directly. First-time linking of other email providers requires an email code to verify current mailbox ownership.
 
-The backend verifies Google's signature, audience, issuer and expiry using google-auth, checks verified email and a cookie-bound nonce, and persists nonce replay protection. Google sign-in alone does not issue a session: the email code is mandatory. Users are stored only after code verification. Existing email profiles retain their names and roles; a Google identity is linked only after both verifications. Existing phone-only accounts remain separate: automatic phone/email merging is intentionally unsupported. Use the original method for those accounts. Google identities whose email changes require manual account recovery; they are never silently reassigned.
+The backend verifies Google's signature, audience, issuer and expiry using google-auth, checks verified email and a cookie-bound nonce, and persists nonce replay protection. Existing email profiles retain their names and roles. Google accounts are matched by their stable subject first, then linked to the same normalized email after ownership verification. Existing phone-only accounts remain separate; automatic phone/email merging is unsupported.
+
+## Email and password (6 November 2026)
+
+Apply migration 005 with `python dev.py init`. New email users choose Create account, verify their email code, and set a password of 12–128 characters. Returning users enter email and password. Existing OTP-only users choose Set or reset password once; verified recovery updates the same account and preserves its name, roles, bookings and equipment. Password changes revoke older sessions. Repeated registration with an existing email also reuses that profile after mailbox verification.
+
+Passwords use salted PBKDF2-SHA256 hashes with 600,000 iterations in a separate credential table, never returned in user responses. Password attempts are rate-limited by email and IP. Recovery codes expire after five minutes and are single-use. The existing email OTP API remains compatible.
+
+Local verification: 61 backend tests passed against PostgreSQL, including password login/recovery, account reuse, preserved owner roles, Google direct sessions and nonce replay rejection. Frontend production build passed. Google token responses and email delivery are test doubles in these tests; an actual Google account login has not been performed for this update.
 
 Official setup and token validation references:
 - https://developers.google.com/identity/gsi/web/guides/get-google-api-clientid

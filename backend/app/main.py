@@ -27,6 +27,7 @@ from app.db import db, one, many
 from app.domain import can_rent, bill, meter_quantity, find_next_available_slot, validate_booking_interval, MIN_BOOKING_DURATION, MAX_BOOKING_DURATION
 from app.sms import provider
 from app.email_auth import email_mode, send_email, verify_google
+from app.passwords import hash_password, check_password, DUMMY_HASH
 
 app=FastAPI(title='YantraSetu',version='0.1.0')
 _origins_raw=os.getenv('FRONTEND_ORIGIN','http://localhost:5173')
@@ -195,6 +196,7 @@ class Verify(BaseModel):
     challenge_id:UUID
     code:str=Field(pattern=r'^\d{6}$')
 class LoginVerify(Verify):
+    password:str|None=Field(default=None,min_length=12,max_length=128)
     name:str|None=Field(default=None,min_length=2,max_length=80)
     roles:list[Literal['farmer','owner','operator','fpo']]|None=Field(default=None,min_length=1,max_length=4)
     language:Literal['en','hi','pa']='en'
@@ -210,23 +212,46 @@ def establish_session(c,u,response):
 
 class EmailLogin(BaseModel):
     email:str=Field(pattern=r'^[^@\s]+@[^@\s]+\.[^@\s]+$',max_length=254)
+    @field_validator('email',mode='before')
+    @classmethod
+    def normalize_email(cls,value):
+        return value.strip().lower() if isinstance(value,str) else value
+class EmailRequest(EmailLogin):
+    action:Literal['login','register','reset']='login'
+class PasswordLogin(EmailLogin):
+    password:str=Field(min_length=1,max_length=128)
 class GoogleLogin(BaseModel):
     credential:str=Field(min_length=20,max_length=10000)
+    role:Literal['farmer','owner']='farmer'
+    language:Literal['en','hi','pa']='en'
 
 @app.get('/api/auth/config')
 def auth_config():
-    return {'email':email_mode(), 'phone':False, 'google_client_id':os.getenv('GOOGLE_CLIENT_ID','') if email_mode()!='disabled' else ''}
+    return {'email':email_mode(), 'phone':False, 'google_client_id':os.getenv('GOOGLE_CLIENT_ID','')}
+
+@app.post('/api/auth/password/login')
+def password_login(p:PasswordLogin,request:Request,response:Response):
+    # Commit rate counters before checking credentials, including failed attempts.
+    with db() as c:
+        throttle(c,'password-ip:'+request.client.host,30,600)
+        throttle(c,'password-email:'+p.email,10,600)
+    with db() as c:
+        u=one(c,'SELECT * FROM users WHERE lower(email)=%s',(p.email,))
+        saved=one(c,'SELECT password_hash FROM user_passwords WHERE user_id=%s',(u['id'],)) if u else None
+        valid=check_password(p.password,saved['password_hash'] if saved else DUMMY_HASH)
+        require(valid and u and saved,'Incorrect email or password. Use Set or reset password if needed.',401)
+        return establish_session(c,u,response)
 
 @app.post('/api/auth/email/request')
-def email_request(p:EmailLogin,request:Request):
+def email_request(p:EmailRequest,request:Request):
     require(email_mode()!='disabled','Email sign-in is not configured.',503)
     with db() as c:
         throttle(c,'ip:'+request.client.host,20,600)
-        return issue(c,str(p.email).lower(),'email_login',{})
+        return issue(c,p.email,'email_login',{'action':p.action})
 
 @app.post('/api/auth/google/nonce')
 def google_nonce(request:Request,response:Response):
-    require(bool(os.getenv('GOOGLE_CLIENT_ID')) and email_mode()!='disabled','Google sign-in is not configured.',503)
+    require(bool(os.getenv('GOOGLE_CLIENT_ID')),'Google sign-in is not configured.',503)
     with db() as c:
         throttle(c,'google-ip:'+request.client.host,20,600)
     nonce=secrets.token_urlsafe(32)
@@ -246,9 +271,26 @@ def google_request(p:GoogleLogin,request:Request,response:Response):
     with db() as c:
         # A persisted one-use nonce prevents replay even with a copied cookie.
         throttle(c,'google-nonce:'+digest(nonce),1,600)
-        result=issue(c,email,'email_login',{'google_sub':claims['sub']})
+        c.execute('SELECT pg_advisory_xact_lock(hashtextextended(%s,0))',('google:'+claims['sub'],))
+        c.execute('SELECT pg_advisory_xact_lock(hashtextextended(%s,0))',('email:'+email,))
+        u=one(c,'SELECT * FROM users WHERE google_sub=%s',(claims['sub'],))
+        if not u:
+            u=one(c,'SELECT * FROM users WHERE lower(email)=%s',(email,))
+            require(not u or not u['google_sub'],'Email belongs to a different Google identity.',409)
+            # Google is not authoritative for a third-party mailbox without Workspace.
+            authoritative=email.endswith('@gmail.com') or bool(claims.get('hd'))
+            if not authoritative:
+                result=issue(c,email,'email_login',{'google_sub':claims['sub'],'google_name':claims.get('name') or 'Google user','roles':[p.role],'language':p.language})
+                response.delete_cookie('ys_google_nonce',path='/api/auth/google')
+                return {**result,'email':email}
+            if u:
+                u=one(c,'UPDATE users SET google_sub=%s,email_verified_at=now() WHERE id=%s RETURNING *',(claims['sub'],u['id']))
+            else:
+                name=(claims.get('name') or email.split('@')[0]).strip()[:80] or 'Google user'
+                u=one(c,'INSERT INTO users(id,email,name,roles,language,email_verified_at,google_sub) VALUES(%s,%s,%s,%s,%s,now(),%s) RETURNING *',(uid(),email,name,[p.role],p.language,claims['sub']))
+        result=establish_session(c,u,response)
     response.delete_cookie('ys_google_nonce',path='/api/auth/google')
-    return {**result,'email':email}
+    return result
 
 @app.post('/api/auth/email/verify')
 def email_verify(p:LoginVerify,response:Response):
@@ -258,18 +300,27 @@ def email_verify(p:LoginVerify,response:Response):
         c.execute('SELECT pg_advisory_xact_lock(hashtextextended(%s,0))',('email:'+email,))
         sub=row['payload'].get('google_sub')
         u=one(c,'SELECT * FROM users WHERE lower(email)=%s',(email,))
+        action=row['payload'].get('action','login')
+        if action=='reset':
+            require(u is not None,'No account exists for this email. Choose Create account.',404)
+        if action in ('register','reset'):
+            require(p.password is not None,'Choose a password with at least 12 characters.',422)
         if sub:
             linked=one(c,'SELECT * FROM users WHERE google_sub=%s',(sub,))
             require(not linked or (u is not None and linked['id']==u['id']),
                     'Google account email changed. Sign in with your existing email and contact support.',409)
             require(not u or not u['google_sub'] or u['google_sub']==sub,'Email belongs to a different Google identity.',409)
         if not u:
-            require(p.name is not None and len(p.name.strip())>=2,'Your name is required to create an account.',422)
+            name=p.name or row['payload'].get('google_name')
+            require(name is not None and len(name.strip())>=2,'Your name is required to create an account.',422)
             u=one(c,'INSERT INTO users(id,email,name,roles,language,email_verified_at,google_sub) VALUES(%s,%s,%s,%s,%s,now(),%s) RETURNING *',
-                  (uid(),email,p.name.strip(),list(set(p.roles or ['farmer'])),p.language,sub))
+                  (uid(),email,name.strip()[:80],list(set(p.roles or row['payload'].get('roles') or ['farmer'])),row['payload'].get('language',p.language),sub))
         else:
             # Login never changes existing roles or profile names.
             u=one(c,'UPDATE users SET email_verified_at=now(),google_sub=COALESCE(google_sub,%s) WHERE id=%s RETURNING *',(sub,u['id']))
+        if p.password:
+            c.execute('INSERT INTO user_passwords(user_id,password_hash) VALUES(%s,%s) ON CONFLICT(user_id) DO UPDATE SET password_hash=EXCLUDED.password_hash',(u['id'],hash_password(p.password)))
+            c.execute('DELETE FROM sessions WHERE user_id=%s',(u['id'],))
         return establish_session(c,u,response)
 
 @app.get('/api/health')

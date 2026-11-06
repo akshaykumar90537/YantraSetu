@@ -21,6 +21,7 @@ export function LoginForm({ busy, run, onUser, defaultRole = 'farmer', lang = 'e
   const [destination, setDestination] = useState('');
   const [googleError, setGoogleError] = useState('');
   const [googleReady, setGoogleReady] = useState(false);
+  const [mode, setMode] = useState('login');
   const googleButton = useRef(null);
 
   useEffect(() => {
@@ -41,9 +42,14 @@ export function LoginForm({ busy, run, onUser, defaultRole = 'farmer', lang = 'e
           client_id: googleClientId,
           callback: ({ credential }) =>
             run(async () => {
-              const result = await api('/auth/google', { credential });
-              setDestination(result.email);
-              acceptChallenge(result);
+              const result = await api('/auth/google', { credential, role: defaultRole === 'owner' ? 'owner' : 'farmer', language: lang });
+              if (result.challenge_id) {
+                setMode('google');
+                setDestination(result.email);
+                acceptChallenge(result);
+              } else {
+                onUser(result);
+              }
             }),
         });
         window.google.accounts.id.renderButton(googleButton.current, {
@@ -116,11 +122,11 @@ export function LoginForm({ busy, run, onUser, defaultRole = 'farmer', lang = 'e
         )}
       </div>
 
-      <h2>{challenge ? 'Verify your code' : 'Sign in with Email'}</h2>
+      <h2>{challenge ? 'Verify your email' : mode === 'register' ? 'Create your account' : mode === 'reset' ? 'Set or reset password' : 'Welcome back'}</h2>
       <p>
         {challenge
           ? `Enter the 6-digit verification code sent to ${destination}.`
-          : 'Sign in with your Google account or receive an OTP in your email.'}
+          : mode === 'login' ? 'Sign in with Google or your email and password.' : mode === 'reset' ? 'Verify your email to set a password for your existing account.' : 'Verify your email, then choose a password for future sign-ins.'}
       </p>
 
       {!challenge ? (
@@ -177,8 +183,13 @@ export function LoginForm({ busy, run, onUser, defaultRole = 'farmer', lang = 'e
             onSubmit={(e) => {
               e.preventDefault();
               const val = new FormData(e.target).get('destination').trim();
+              const password = new FormData(e.target).get('password');
               run(async () => {
-                const result = await api('/auth/email/request', { email: val });
+                if (mode === 'login') {
+                  onUser(await api('/auth/password/login', { email: val, password }));
+                  return;
+                }
+                const result = await api('/auth/email/request', { email: val, action: mode });
                 setDestination(val);
                 acceptChallenge(result);
               });
@@ -195,13 +206,17 @@ export function LoginForm({ busy, run, onUser, defaultRole = 'farmer', lang = 'e
                 defaultValue={destination || ''}
               />
             </FormField>
-            <div className="banner" style={{ fontSize: '11px' }}>
-              A real verification OTP will be delivered to your inbox.
-            </div>
+            {mode === 'login' && <FormField label="Password"><input name="password" type="password" autoComplete="current-password" required maxLength={128} /></FormField>}
             <button className="primary full" disabled={busy}>
-              Send verification code <ArrowRight size={17} />
+              {mode === 'login' ? 'Sign in to dashboard' : 'Send verification code'} <ArrowRight size={17} />
             </button>
           </form>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 16 }}>
+            {mode !== 'login' && <button className="text-button" disabled={busy} onClick={() => setMode('login')}>Already registered? Sign in</button>}
+            {mode !== 'register' && <button className="text-button" disabled={busy} onClick={() => setMode('register')}>Create account</button>}
+            {mode !== 'reset' && <button className="text-button" disabled={busy} onClick={() => setMode('reset')}>Set or reset password</button>}
+          </div>
+          {mode === 'login' && <small>Previously used an email code? Choose Set or reset password once, then sign in here.</small>}
         </>
       ) : (
         <form
@@ -209,9 +224,11 @@ export function LoginForm({ busy, run, onUser, defaultRole = 'farmer', lang = 'e
             e.preventDefault();
             const f = new FormData(e.target);
             run(async () => {
+              if (mode !== 'google' && f.get('password') !== f.get('confirmPassword')) throw new Error('Passwords do not match.');
               const u = await api('/auth/email/verify', {
                 challenge_id: challenge.challenge_id,
                 code: f.get('code'),
+                ...(mode !== 'google' ? { password: f.get('password') } : {}),
                 ...(f.get('name') ? { name: f.get('name'), roles: f.getAll('roles') } : {}),
                 language: lang,
                 email: destination,
@@ -235,9 +252,10 @@ export function LoginForm({ busy, run, onUser, defaultRole = 'farmer', lang = 'e
               onChange={(e) => { e.target.value = e.target.value.replace(/\D/g, '').slice(0, 6); }}
             />
           </FormField>
-          <FormField label="Your name (for new account registration)">
+          {mode === 'register' && <><FormField label="Your name">
             <input
               name="name"
+              required
               minLength={2}
               maxLength={80}
               autoComplete="name"
@@ -269,7 +287,11 @@ export function LoginForm({ busy, run, onUser, defaultRole = 'farmer', lang = 'e
                 {label}
               </label>
             ))}
-          </fieldset>
+          </fieldset></>}
+          {mode !== 'google' && <>
+            <FormField label="New password (at least 12 characters)"><input name="password" type="password" autoComplete="new-password" minLength={12} maxLength={128} required /></FormField>
+            <FormField label="Confirm password"><input name="confirmPassword" type="password" autoComplete="new-password" minLength={12} maxLength={128} required /></FormField>
+          </>}
           <small>Existing registered profiles retain their saved details.</small>
           <button className="primary full" disabled={busy} style={{ marginTop: '14px' }}>
             Verify & Enter Dashboard <ArrowRight size={17} />
@@ -280,6 +302,7 @@ export function LoginForm({ busy, run, onUser, defaultRole = 'farmer', lang = 'e
             disabled={busy}
             onClick={() => {
               setChallenge(null);
+              setMode('login');
               setGoogleError('');
             }}
             style={{ marginTop: '12px' }}
