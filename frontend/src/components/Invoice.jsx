@@ -67,9 +67,7 @@ export function Invoice({ data, lang = 'en' }) {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '2px solid #15803d', paddingBottom: '16px', marginBottom: '20px' }}>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#15803d' }}>
-              <div style={{ background: '#15803d', color: '#fff', borderRadius: '8px', padding: '6px', display: 'flex' }}>
-                <Sprout size={24} />
-              </div>
+              <img src="/icon.svg" width="36" height="36" alt="" style={{ flexShrink: 0 }} />
               <div>
                 <h1 style={{ margin: 0, fontSize: '24px', fontWeight: '800', letterSpacing: '-0.5px', color: '#14532d' }}>YantraSetu</h1>
                 <small style={{ fontSize: '11px', color: '#64748b', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.5px' }}>

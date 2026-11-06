@@ -375,6 +375,7 @@ export function BookingForm({ machine: m, online, busy, run, onDone, lang = 'en'
           </div>
         )}
 
+        <p>{t('approvalPayment')}</p>
         <div className="actions">
           {online && (
             <button

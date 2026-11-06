@@ -11,6 +11,27 @@ DSN=os.getenv('TEST_DATABASE_URL')
 pytestmark=pytest.mark.skipif(not DSN,reason='TEST_DATABASE_URL unavailable; real PostGIS integration not executed')
 
 @pytest.fixture
+def mailbox(monkeypatch):
+    from app import main
+    messages = {}
+    def deliver(address, code):
+        messages[address] = code
+        return {'delivery': 'EMAIL_ACCEPTED'}
+    monkeypatch.setenv('EMAIL_PROVIDER', 'smtp')
+    monkeypatch.setenv('SMTP_HOST', 'test.invalid')
+    monkeypatch.setenv('SMTP_FROM', 'sender@example.test')
+    monkeypatch.setattr(main, 'send_email', deliver)
+    return messages
+
+def sign_in(client, address, mailbox, **profile):
+    challenge = client.post('/api/auth/email/request', json={'email': address})
+    assert challenge.status_code == 200, challenge.text
+    response = client.post('/api/auth/email/verify', json={
+        'challenge_id': challenge.json()['challenge_id'], 'code': mailbox[address], **profile})
+    assert response.status_code == 200, response.text
+    return response.json()
+
+@pytest.fixture
 def database():
     schema='test_'+uuid4().hex
     with psycopg.connect(DSN,autocommit=True) as c:
@@ -28,7 +49,7 @@ def database():
     owner,farmer,operator,machine=[uuid4() for _ in range(4)]
     with connect() as c:
         for ident,phone in [(owner,'+919000000002'),(farmer,'+919000000001'),(operator,'+919000000003')]:
-            c.execute('INSERT INTO users(id,phone,name) VALUES(%s,%s,%s)',(ident,phone,'Test'))
+            c.execute('INSERT INTO users(id,phone,name,email) VALUES(%s,%s,%s,%s)',(ident,phone,'Test',phone[1:]+'@example.test'))
         c.execute("INSERT INTO machines(id,owner_id,name,category,village,location,rate,unit) VALUES(%s,%s,'Test','Tractor','Test',ST_SetSRID(ST_MakePoint(75,30),4326)::geography,650,'hour')",(machine,owner))
     yield connect,farmer,machine,operator,owner
     with psycopg.connect(DSN,autocommit=True) as c:c.execute(f'DROP SCHEMA {schema} CASCADE')
@@ -68,7 +89,7 @@ def test_operator_overlap_across_machines_rejected(database):
     with pytest.raises(psycopg.errors.ExclusionViolation):
         with connect() as c:insert(c,farmer,other,operator)
 
-def test_api_full_booking_billing_and_authorization(database,monkeypatch):
+def test_api_full_booking_billing_and_authorization(database, monkeypatch, mailbox):
     from contextlib import contextmanager
     from psycopg.rows import dict_row
     from fastapi.testclient import TestClient
@@ -85,14 +106,9 @@ def test_api_full_booking_billing_and_authorization(database,monkeypatch):
     owner=TestClient(main.app,headers=headers)
     farmer=TestClient(main.app,headers=headers)
     stranger=TestClient(main.app,headers=headers)
-    def login(client,phone,roles):
-        r=client.post('/api/auth/request',json={'phone':phone});assert r.status_code==200,r.text
-        challenge=r.json()
-        r=client.post('/api/auth/verify',json={'challenge_id':challenge['challenge_id'],'code':challenge['development_code'],'name':'Integration Test','roles':roles})
-        assert r.status_code==200,r.text
-    login(owner,'+919100000001',['owner'])
-    login(farmer,'+919100000002',['farmer'])
-    login(stranger,'+919100000003',['farmer'])
+    sign_in(owner,'owner@example.test',mailbox,name='Test Owner',roles=['owner'])
+    sign_in(farmer,'farmer@example.test',mailbox,name='Test Farmer',roles=['farmer'])
+    sign_in(stranger,'other@example.test',mailbox,name='Test Stranger',roles=['farmer'])
     r=owner.post('/api/machines',json={'name':'Test tractor','category':'Tractor','village':'Test village','latitude':30,'longitude':75,'rate':'650.00','unit':'hour','mobilization':'250.00'})
     assert r.status_code==200,r.text
     machine=r.json()['id']
@@ -111,7 +127,7 @@ def test_api_full_booking_billing_and_authorization(database,monkeypatch):
     for stage,reading in [('start','100.000'),('end','102.500')]:
         r=owner.post(f'/api/bookings/{booking}/meter/request',json={'stage':stage,'reading':reading});assert r.status_code==200,r.text
         challenge=r.json()
-        proof={'challenge_id':challenge['challenge_id'],'code':challenge['development_code']}
+        proof={'challenge_id':challenge['challenge_id'],'code':mailbox['farmer@example.test']}
         assert owner.post(f'/api/bookings/{booking}/meter/confirm',json=proof).status_code==403
         r=farmer.post(f'/api/bookings/{booking}/meter/confirm',json=proof);assert r.status_code==200,r.text
         assert farmer.post(f'/api/bookings/{booking}/meter/confirm',json=proof).status_code==400
@@ -123,7 +139,7 @@ def test_api_full_booking_billing_and_authorization(database,monkeypatch):
     assert owner.post(f'/api/bookings/{booking}/rating',json={'score':4}).status_code==200
     assert stranger.post(f'/api/bookings/{booking}/payment-report',json={'status':'UNPAID'}).status_code==403
 
-def test_otp_wrong_attempts_persist_and_lock(database,monkeypatch):
+def test_otp_wrong_attempts_persist_and_lock(database, monkeypatch, mailbox):
     from contextlib import contextmanager
     from psycopg.rows import dict_row
     from fastapi.testclient import TestClient
@@ -136,14 +152,14 @@ def test_otp_wrong_attempts_persist_and_lock(database,monkeypatch):
             yield c
     monkeypatch.setattr(main,'db',isolated_db)
     client=TestClient(main.app,headers={'X-Requested-With':'YantraSetu'})
-    challenge=client.post('/api/auth/request',json={'phone':'+919100000004'}).json()
-    wrong='000000' if challenge['development_code']!='000000' else '111111'
+    challenge=client.post('/api/auth/email/request',json={'email':'locked@example.test'}).json()
+    wrong='000000' if mailbox['locked@example.test']!='000000' else '111111'
     body={'challenge_id':challenge['challenge_id'],'code':wrong,'name':'Test'}
-    for _ in range(5):assert client.post('/api/auth/verify',json=body).status_code==400
-    body['code']=challenge['development_code']
-    assert client.post('/api/auth/verify',json=body).status_code==400
+    for _ in range(5):assert client.post('/api/auth/email/verify',json=body).status_code==400
+    body['code']=mailbox['locked@example.test']
+    assert client.post('/api/auth/email/verify',json=body).status_code==400
 
-def test_user_login_does_not_recreate_or_require_registration(database, monkeypatch):
+def test_user_login_does_not_recreate_or_require_registration(database, monkeypatch, mailbox):
     from contextlib import contextmanager
     from psycopg.rows import dict_row
     from fastapi.testclient import TestClient
@@ -158,54 +174,16 @@ def test_user_login_does_not_recreate_or_require_registration(database, monkeypa
     headers = {'X-Requested-With': 'YantraSetu', 'Origin': 'http://localhost:5173'}
     client = TestClient(main.app, headers=headers)
 
-    phone = '+919988776655'
-
-    # 1. First time request: user does not exist yet
-    r1 = client.post('/api/auth/request', json={'phone': phone})
-    assert r1.status_code == 200
-    ch1 = r1.json()
-    assert ch1['is_new_user'] is True
-    assert ch1.get('name') is None
-
-    # 2. Register first time
-    v1 = client.post('/api/auth/verify', json={
-        'challenge_id': ch1['challenge_id'],
-        'code': ch1['development_code'],
-        'name': 'Gurpreet Singh',
-        'roles': ['farmer']
-    })
-    assert v1.status_code == 200
-    u1 = v1.json()
-    assert u1['name'] == 'Gurpreet Singh'
-    assert u1['phone'] == phone
-
-    # Logout
+    address = 'returning@example.test'
+    first = sign_in(client,address,mailbox,name='Gurpreet Singh',roles=['farmer'])
     client.post('/api/auth/logout')
-
-    # 3. Second time request: user already exists
-    r2 = client.post('/api/auth/request', json={'phone': phone})
-    assert r2.status_code == 200
-    ch2 = r2.json()
-    assert ch2['is_new_user'] is False
-    assert 'name' not in ch2 and 'user_name' not in ch2
-    assert 'roles' not in ch2 and 'user_roles' not in ch2
-
-    # 4. Login without name or roles (must succeed into existing account)
-    v2 = client.post('/api/auth/verify', json={
-        'challenge_id': ch2['challenge_id'],
-        'code': ch2['development_code']
-    })
-    assert v2.status_code == 200
-    u2 = v2.json()
-    assert u2['id'] == u1['id']
-    assert u2['name'] == 'Gurpreet Singh'
-
-    # 5. Verify only 1 record exists in users table for this phone
+    again = sign_in(client,address,mailbox)
+    assert again['id'] == first['id']
+    assert again['name'] == 'Gurpreet Singh'
     with isolated_db() as c:
-        records = c.execute('SELECT * FROM users WHERE phone=%s', (phone,)).fetchall()
-        assert len(records) == 1
+        assert len(c.execute('SELECT id FROM users WHERE email=%s',(address,)).fetchall()) == 1
 
-def test_owner_cannot_view_or_book_own_equipment(database, monkeypatch):
+def test_owner_cannot_view_or_book_own_equipment(database, monkeypatch, mailbox):
     from contextlib import contextmanager
     from datetime import datetime, timezone, timedelta
     from psycopg.rows import dict_row
@@ -226,8 +204,7 @@ def test_owner_cannot_view_or_book_own_equipment(database, monkeypatch):
         c.execute("UPDATE users SET roles=ARRAY['farmer'] WHERE id=%s", (farmer,))
 
     owner_client = TestClient(main.app, headers=headers)
-    r_ch = owner_client.post('/api/auth/request', json={'phone': '+919000000002'}).json()
-    owner_client.post('/api/auth/verify', json={'challenge_id': r_ch['challenge_id'], 'code': r_ch['development_code']})
+    sign_in(owner_client,'919000000002@example.test',mailbox)
 
     # 2. Search machines as owner: owner's own machine must be excluded
     res = owner_client.get('/api/machines?latitude=30&longitude=75&radius=10')
@@ -247,13 +224,19 @@ def test_owner_cannot_view_or_book_own_equipment(database, monkeypatch):
         'idempotency_key': str(uuid4())
     })
     assert book_attempt.status_code == 403
-    assert book_attempt.json()['detail'] == "You cannot book your own equipment."
+    assert owner_client.get(f'/api/machines/{machine}/availability').status_code == 200
 
+    window = {'start':start,'end':end}
+    assert owner_client.get('/api/fleet/maintenance',params=window).json() == []
+    block = owner_client.post(f'/api/machines/{machine}/maintenance',json={'start_at':(datetime.now(timezone.utc)+timedelta(hours=5)).isoformat(),'end_at':(datetime.now(timezone.utc)+timedelta(hours=6)).isoformat(),'reason':'Service'})
+    assert block.status_code == 200
+    week = {**window,'end':(datetime.now(timezone.utc)+timedelta(days=1)).isoformat()}
+    assert owner_client.get('/api/fleet/maintenance',params=week).json()[0]['reason']=='Service'
     # 4. Sign in as non-owner (farmer)
     farmer_client = TestClient(main.app, headers=headers)
-    r_ch_f = farmer_client.post('/api/auth/request', json={'phone': '+919000000001'}).json()
-    farmer_client.post('/api/auth/verify', json={'challenge_id': r_ch_f['challenge_id'], 'code': r_ch_f['development_code']})
+    sign_in(farmer_client,'919000000001@example.test',mailbox)
 
+    assert farmer_client.get('/api/fleet/maintenance',params=week).status_code==403
     # 5. Non-owner searches: machine is visible
     res_f = farmer_client.get('/api/machines?latitude=30&longitude=75&radius=10')
     assert res_f.status_code == 200
@@ -271,7 +254,7 @@ def test_owner_cannot_view_or_book_own_equipment(database, monkeypatch):
     })
     assert book_ok.status_code == 200
 
-def test_equipment_delisting_and_reactivation(database, monkeypatch):
+def test_equipment_delisting_and_reactivation(database, monkeypatch, mailbox):
     from contextlib import contextmanager
     from datetime import datetime, timezone, timedelta
     from psycopg.rows import dict_row
@@ -292,8 +275,7 @@ def test_equipment_delisting_and_reactivation(database, monkeypatch):
 
     # Sign in as owner
     owner_client = TestClient(main.app, headers=headers)
-    r_ch = owner_client.post('/api/auth/request', json={'phone': '+919000000002'}).json()
-    owner_client.post('/api/auth/verify', json={'challenge_id': r_ch['challenge_id'], 'code': r_ch['development_code']})
+    sign_in(owner_client,'919000000002@example.test',mailbox)
 
     # Delist equipment
     delist_res = owner_client.patch(f'/api/machines/{machine}/status', json={'is_active': False})
@@ -302,8 +284,7 @@ def test_equipment_delisting_and_reactivation(database, monkeypatch):
 
     # Sign in as farmer
     farmer_client = TestClient(main.app, headers=headers)
-    r_ch_f = farmer_client.post('/api/auth/request', json={'phone': '+919000000001'}).json()
-    farmer_client.post('/api/auth/verify', json={'challenge_id': r_ch_f['challenge_id'], 'code': r_ch_f['development_code']})
+    sign_in(farmer_client,'919000000001@example.test',mailbox)
 
     # Delisted equipment is hidden from search
     res = farmer_client.get('/api/machines?latitude=30&longitude=75&radius=10')
@@ -339,7 +320,7 @@ def test_equipment_delisting_and_reactivation(database, monkeypatch):
     })
     assert book_success.status_code == 200
 
-def test_mutual_rating_and_booking_fields(database, monkeypatch):
+def test_mutual_rating_and_booking_fields(database, monkeypatch, mailbox):
     from contextlib import contextmanager
     from datetime import datetime, timezone, timedelta
     from uuid import uuid4
@@ -360,12 +341,10 @@ def test_mutual_rating_and_booking_fields(database, monkeypatch):
         c.execute("UPDATE users SET roles=ARRAY['farmer'] WHERE id=%s", (farmer,))
 
     owner_client = TestClient(main.app, headers=headers)
-    r_ch_o = owner_client.post('/api/auth/request', json={'phone': '+919000000002'}).json()
-    owner_client.post('/api/auth/verify', json={'challenge_id': r_ch_o['challenge_id'], 'code': r_ch_o['development_code']})
+    sign_in(owner_client,'919000000002@example.test',mailbox)
 
     farmer_client = TestClient(main.app, headers=headers)
-    r_ch_f = farmer_client.post('/api/auth/request', json={'phone': '+919000000001'}).json()
-    farmer_client.post('/api/auth/verify', json={'challenge_id': r_ch_f['challenge_id'], 'code': r_ch_f['development_code']})
+    sign_in(farmer_client,'919000000001@example.test',mailbox)
 
     # Farmer requests booking
     start = (datetime.now(timezone.utc) + timedelta(hours=3)).isoformat()

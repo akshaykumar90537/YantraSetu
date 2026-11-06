@@ -29,6 +29,10 @@ def distance(a,b):
     lat1,lon1,lat2,lon2 = map(radians,(*a,*b))
     return 6371.0088 * 2 * asin(min(1,sqrt(sin((lat2-lat1)/2)**2+cos(lat1)*cos(lat2)*sin((lon2-lon1)/2)**2)))
 
+def can_rent(roles):
+    return "farmer" in roles and "owner" not in roles
+
+
 def find_next_available_slot(now_dt, busy_intervals, buffer_minutes=15, duration_minutes=120):
     """Finds next continuous free slot of duration_minutes starting at or after now_dt, accounting for turnaround buffer."""
     from datetime import timedelta

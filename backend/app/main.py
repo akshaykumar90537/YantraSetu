@@ -24,7 +24,7 @@ else:
     load_dotenv(override=False)
 
 from app.db import db, one, many
-from app.domain import bill, meter_quantity, find_next_available_slot, validate_booking_interval, MIN_BOOKING_DURATION, MAX_BOOKING_DURATION
+from app.domain import can_rent, bill, meter_quantity, find_next_available_slot, validate_booking_interval, MIN_BOOKING_DURATION, MAX_BOOKING_DURATION
 from app.sms import provider
 from app.email_auth import email_mode, send_email, verify_google
 
@@ -161,7 +161,7 @@ def issue(c,phone,purpose,payload):
     throttle(c,'send:'+phone,5,600)
     code=f'{secrets.randbelow(1000000):06}'
     ident=uid()
-    payload={**payload,'development': '@' not in phone or email_mode()=='development'}
+    payload={**payload,'development': '@' not in phone}
     c.execute('INSERT INTO challenges(id,phone,purpose,digest,payload,expires_at) VALUES(%s,%s,%s,%s,%s,now()+interval \'5 minutes\')',(ident,phone,purpose,digest(ident+code),Jsonb(payload)))
     if '@' in phone:
         status=send_email(phone,code)
@@ -178,6 +178,8 @@ def consume(c,ident,code,purpose,actor=None):
     require(row is not None,'Invalid challenge',400)
     require(row['purpose']==purpose,'Wrong verification purpose',400)
     require(DEV or not row['payload'].get('development',False) or row.get('purpose') in ('login','email_login'),'Development codes cannot be used in production',400)
+    if purpose == 'email_login':
+        require(not row['payload'].get('development', False), 'Request a new email code.', 400)
     if actor: require(row['phone']==contact(actor),'This code belongs to the farmer who booked')
     require(row['consumed_at'] is None and row['expires_at']>datetime.now(timezone.utc) and row['attempts']<5,'Code expired or locked',400)
     c.execute('UPDATE challenges SET attempts=attempts+1 WHERE id=%s',(ident,))
@@ -213,7 +215,7 @@ class GoogleLogin(BaseModel):
 
 @app.get('/api/auth/config')
 def auth_config():
-    return {'email':email_mode(), 'phone':True, 'google_client_id':os.getenv('GOOGLE_CLIENT_ID','') if email_mode()!='disabled' else ''}
+    return {'email':email_mode(), 'phone':False, 'google_client_id':os.getenv('GOOGLE_CLIENT_ID','') if email_mode()!='disabled' else ''}
 
 @app.post('/api/auth/email/request')
 def email_request(p:EmailLogin,request:Request):
@@ -281,68 +283,11 @@ def health():
     return {'status':'ok','database':db_status,'sms':'SIMULATED_NOT_SENT','payments':'outside_platform_only','version':'0.1.0'}
 @app.post('/api/auth/request')
 def login(p:Login,request:Request):
-    try:
-        with db() as c:
-            client_host = request.client.host if request.client else '127.0.0.1'
-            throttle(c,'ip:'+client_host,20,600)
-            existing = one(c,'SELECT id,name,roles,phone FROM users WHERE phone=%s',(p.phone,))
-            res = issue(c,p.phone,'login',{'user_exists': existing is not None})
-            res['is_new_user'] = existing is None
-            return res
-    except HTTPException:
-        raise
-    except Exception:
-        ch_id = str(uuid4())
-        is_new = p.phone not in DEMO_USERS
-        DEMO_CHALLENGES[ch_id] = {'phone': p.phone, 'is_new_user': is_new}
-        return {
-            'challenge_id': ch_id,
-            'expires_in': 300,
-            'delivery': 'SIMULATED_NOT_SENT',
-            'development_code': '123456',
-            'message': 'Demo mode active. Use code: 123456',
-            'is_new_user': is_new,
-        }
+    raise HTTPException(400, 'Use email sign-in to request a verification code.')
 
 @app.post('/api/auth/verify')
 def verify(p:LoginVerify,response:Response):
-    try:
-        with db() as c:
-            row=consume(c,p.challenge_id,p.code,'login')
-            u=one(c,'SELECT * FROM users WHERE phone=%s',(row['phone'],))
-            if not u:
-                require(p.name is not None and len(p.name.strip())>=2,'Your name is required to complete new account registration',422)
-                assigned_roles=list(set(p.roles)) if p.roles else ['farmer']
-                import uuid
-                phone_uuid=str(uuid.uuid5(uuid.NAMESPACE_OID,row['phone']))
-                u=one(c,'INSERT INTO users(id,phone,name,roles,language) VALUES(%s,%s,%s,%s,%s) RETURNING *',(phone_uuid,row['phone'],p.name.strip(),assigned_roles,p.language))
-            return establish_session(c,u,response)
-    except HTTPException:
-        raise
-    except Exception:
-        import uuid
-        ch = DEMO_CHALLENGES.get(str(p.challenge_id))
-        phone = ch['phone'] if ch else p.phone or '+919000000002'
-        phone_uuid = str(uuid.uuid5(uuid.NAMESPACE_OID, phone))
-        if phone in DEMO_USERS:
-            u = DEMO_USERS[phone]
-        else:
-            require(p.name is not None and len(p.name.strip())>=2,'Your name is required to complete new account registration',422)
-            assigned_roles = list(set(p.roles)) if p.roles else ['farmer']
-            u = {
-                'id': phone_uuid,
-                'phone': phone,
-                'email': None,
-                'name': p.name.strip(),
-                'roles': assigned_roles,
-                'language': p.language,
-            }
-            DEMO_USERS[phone] = u
-        token = secrets.token_urlsafe(32)
-        DEMO_SESSIONS[digest(token)] = u['id']
-        samesite_val = 'none' if not DEV else 'lax'
-        response.set_cookie('ys_session', token, httponly=True, secure=not DEV, samesite=samesite_val, max_age=86400, path='/')
-        return u
+    raise HTTPException(400, 'Use email sign-in to verify your code.')
 
 @app.get('/api/me')
 def me(u=Depends(user)): return u
@@ -585,34 +530,31 @@ DEMO_MACHINES = [
 @app.get('/api/machines')
 def machines(latitude:float=30.901,longitude:float=75.857,radius:int=5,category:str='',u=Depends(optional_user)):
     require(-90<=latitude<=90 and -180<=longitude<=180 and 1<=radius<=50,'Invalid search radius or location',422)
-    try:
-        with db() as c:
-            owner_filter = " AND m.owner_id != %s" if u else ""
-            params = [category, category, longitude, latitude, radius*1000]
-            if u:
-                params.append(u['id'])
-            params.extend([longitude, latitude])
-            return many(c,MACHINE_SELECT+f''' WHERE m.active AND COALESCE(m.is_active, true) AND (%s='' OR m.category=%s) AND ST_DWithin(m.location,ST_SetSRID(ST_MakePoint(%s,%s),4326)::geography,%s){owner_filter} ORDER BY ST_Distance(m.location,ST_SetSRID(ST_MakePoint(%s,%s),4326)::geography) LIMIT 100''',tuple(params))
-    except Exception:
-        results = [m for m in DEMO_MACHINES if not u or m.get('owner_id') != u.get('id')]
-        if category:
-            results = [m for m in results if m['category'].lower() == category.lower()]
-        return results
-
+    with db() as c:
+        owner_filter = " AND m.owner_id != %s" if u else ""
+        params = [category, category, longitude, latitude, radius*1000]
+        if u:
+            params.append(u['id'])
+        params.extend([longitude, latitude])
+        return many(c,MACHINE_SELECT+f''' WHERE m.active AND COALESCE(m.is_active, true) AND (%s='' OR m.category=%s) AND ST_DWithin(m.location,ST_SetSRID(ST_MakePoint(%s,%s),4326)::geography,%s){owner_filter} ORDER BY ST_Distance(m.location,ST_SetSRID(ST_MakePoint(%s,%s),4326)::geography) LIMIT 100''',tuple(params))
 @app.get('/api/fleet')
 def fleet(u=Depends(user)):
-    try:
-        with db() as c: return many(c,MACHINE_SELECT+' WHERE m.owner_id=%s ORDER BY m.created_at',(u['id'],))
-    except Exception:
-        return [m for m in DEMO_MACHINES if m.get('owner_id') == u.get('id')]
+    with db() as c: return many(c,MACHINE_SELECT+' WHERE m.owner_id=%s ORDER BY m.created_at',(u['id'],))
+@app.get('/api/fleet/maintenance')
+def fleet_maintenance(start:AwareDatetime,end:AwareDatetime,u=Depends(user)):
+    require('owner' in u['roles'])
+    require(timedelta(0)<end-start<=timedelta(days=8),'Invalid calendar range',422)
+    with db() as c:
+        return many(c,'''SELECT x.machine_id,x.start_at,x.end_at,x.reason
+            FROM maintenance x JOIN machines m ON m.id=x.machine_id
+            WHERE m.owner_id=%s AND x.start_at<%s AND x.end_at>%s ORDER BY x.start_at''',(u['id'],end,start))
+
 @app.get('/api/machines/{ident}/availability')
 def availability(ident:UUID,duration_minutes:int=120,u=Depends(optional_user)):
     with db() as c:
         m=one(c,'SELECT id,owner_id,buffer_minutes,active,COALESCE(is_active,true) AS is_active FROM machines WHERE id=%s',(ident,))
         require(m is not None,'Machine not found',404)
         require(m['active'] and m['is_active'],'This equipment is currently unavailable.',400)
-        if u and m['owner_id']==u['id']:
-            raise HTTPException(403,'You cannot book your own equipment.')
         buffer=m['buffer_minutes'] if m else 15
         reserved=many(c,"SELECT start_at,reserved_until AS end_at,reserved_until,status,quantity FROM bookings WHERE machine_id=%s AND status IN ('PENDING','APPROVED','IN_PROGRESS') AND reserved_until>now() ORDER BY start_at",(ident,))
         maintenance=many(c,'SELECT start_at,end_at,reason FROM maintenance WHERE machine_id=%s AND end_at>now() ORDER BY start_at',(ident,))
@@ -667,8 +609,12 @@ def quote_for(p,m):
         addons_rate += fuel_extra
     b=bill(m['rate'],quantity,m['mobilization'],addons_rate=addons_rate)
     return quantity,b,addons_rate,fuel_extra
+def renter(u=Depends(user)):
+    require(can_rent(u['roles']), 'Renting requires a farmer account without the owner role.', 403)
+    return u
+
 @app.post('/api/quote')
-def quote(p:Booking,u=Depends(user)):
+def quote(p:Booking,u=Depends(renter)):
     try:
         validate_booking_interval(p.start_at, p.end_at)
     except ValueError as e:
@@ -681,8 +627,7 @@ def quote(p:Booking,u=Depends(user)):
         q,b,addons_rate,fuel_extra=quote_for(p,m)
         return {**b,'quantity':q,'unit':m['unit'],'rate':m['rate'],'addons_rate':addons_rate,'fuel_extra':fuel_extra,'payment':'Directly to owner outside platform'}
 @app.post('/api/bookings')
-def book(p:Booking,u=Depends(user)):
-    require('farmer' in u['roles'],'Farmer role required')
+def book(p:Booking,u=Depends(renter)):
     try:
         validate_booking_interval(p.start_at, p.end_at)
     except ValueError as e:
@@ -711,6 +656,9 @@ def book(p:Booking,u=Depends(user)):
         return row
 
 BOOKING_SELECT='''SELECT b.*,
+EXISTS(SELECT 1 FROM challenges ch WHERE ch.purpose='meter' AND ch.payload->>'booking_id'=b.id::text
+AND ch.consumed_at IS NULL AND ch.expires_at>now() AND ch.attempts<5
+AND ch.payload->>'stage'=CASE b.status WHEN 'APPROVED' THEN 'start' WHEN 'IN_PROGRESS' THEN 'end' END) AS needs_meter_confirmation,
 m.name AS machine_name,
 m.category AS machine_category,
 m.owner_id,
@@ -734,10 +682,7 @@ def booking_access(c,ident,u,lock=False):
     return row
 @app.get('/api/bookings')
 def bookings(u=Depends(user)):
-    try:
-        with db() as c: return many(c,BOOKING_SELECT+' WHERE b.farmer_id=%s OR m.owner_id=%s OR b.operator_id=%s ORDER BY b.created_at DESC',(u['id'],)*3)
-    except Exception:
-        return []
+    with db() as c: return many(c,BOOKING_SELECT+' WHERE b.farmer_id=%s OR m.owner_id=%s OR b.operator_id=%s ORDER BY b.created_at DESC',(u['id'],)*3)
 class Action(BaseModel):
     action:Literal['approve','reject','cancel']
 @app.post('/api/bookings/{ident}/action')
@@ -914,10 +859,7 @@ def invoice(ident:UUID,u=Depends(user)):
         }
 @app.get('/api/notifications')
 def notifications(u=Depends(user)):
-    try:
-        with db() as c: return many(c,'SELECT * FROM notifications WHERE user_id=%s ORDER BY created_at DESC LIMIT 100',(u['id'],))
-    except Exception:
-        return []
+    with db() as c: return many(c,'SELECT * FROM notifications WHERE user_id=%s ORDER BY created_at DESC LIMIT 100',(u['id'],))
 @app.get('/api/bookings/{ident}/audit')
 def history(ident:UUID,u=Depends(user)):
     with db() as c:
@@ -931,11 +873,8 @@ def organization(p:Organization,u=Depends(user)):
     with db() as c: return one(c,'INSERT INTO organizations VALUES(%s,%s,%s) RETURNING *',(uid(),u['id'],p.name))
 @app.get('/api/organizations')
 def organizations(u=Depends(user)):
-    try:
-        with db() as c:
-            return many(c,'SELECT o.*, (SELECT count(*) FROM machines m WHERE m.organization_id=o.id) AS machines FROM organizations o WHERE manager_id=%s',(u['id'],))
-    except Exception:
-        return []
+    with db() as c:
+        return many(c,'SELECT o.*, (SELECT count(*) FROM machines m WHERE m.organization_id=o.id) AS machines FROM organizations o WHERE manager_id=%s',(u['id'],))
 @app.get('/api/organizations/{ident}/bookings')
 def org_bookings(ident:UUID,u=Depends(user)):
     with db() as c:

@@ -18,17 +18,26 @@ def auth(database,monkeypatch):
             c.row_factory=dict_row
             yield c
     monkeypatch.setattr(main,'db',isolated)
-    monkeypatch.setenv('EMAIL_PROVIDER','development')
+    client=TestClient(main.app,headers=HEADERS)
+    client.mailbox={}
+    def deliver(address,code):
+        client.mailbox[address]=code
+        return {'delivery':'EMAIL_ACCEPTED'}
+    monkeypatch.setattr(main,'send_email',deliver)
+    monkeypatch.setenv('EMAIL_PROVIDER','smtp')
+    monkeypatch.setenv('SMTP_HOST','smtp.example.com')
+    monkeypatch.setenv('SMTP_FROM','sender@example.com')
     monkeypatch.setenv('APP_ENV','development')
-    return TestClient(main.app,headers=HEADERS),connect
+    return client,connect
 
 def challenge(client,email='person@example.com'):
     r=client.post('/api/auth/email/request',json={'email':email})
     assert r.status_code==200,r.text
-    return r.json()
+    assert 'development_code' not in r.json()
+    return {**r.json(),'test_code':client.mailbox[email.lower()]}
 
 def verify(client,r,**kwargs):
-    return client.post('/api/auth/email/verify',json={'challenge_id':r['challenge_id'],'code':r['development_code'],**kwargs})
+    return client.post('/api/auth/email/verify',json={'challenge_id':r['challenge_id'],'code':r['test_code'],**kwargs})
 
 def test_persist_reuse_logout_and_replay(auth):
     client,connect=auth
@@ -54,16 +63,16 @@ def test_persist_reuse_logout_and_replay(auth):
 def test_lockout_expiry_and_purpose(auth):
     client,connect=auth
     r=challenge(client)
-    wrong='000000' if r['development_code']!='000000' else '999999'
+    wrong='000000' if r['test_code']!='000000' else '999999'
     for _ in range(5):
-        assert verify(client,{**r,'development_code':wrong}).status_code==400
+        assert verify(client,{**r,'test_code':wrong}).status_code==400
     assert verify(client,r,name='Test').status_code==400
     r=challenge(client,'other@example.com')
     with connect() as c:
         c.execute("UPDATE challenges SET expires_at=now()-interval '1 second' WHERE id=%s",(r['challenge_id'],))
     assert verify(client,r,name='Test').status_code==400
     r=challenge(client,'third@example.com')
-    assert client.post('/api/auth/verify',json={'challenge_id':r['challenge_id'],'code':r['development_code'],'name':'Test'}).status_code==400
+    assert client.post('/api/auth/verify',json={'challenge_id':r['challenge_id'],'code':r['test_code'],'name':'Test'}).status_code==400
 
 def test_email_rate_limit(auth):
     client,_=auth
@@ -78,7 +87,7 @@ def test_google_requires_email_code_and_nonce(auth,monkeypatch):
     result=client.post('/api/auth/google',json={'credential':'x'*30})
     assert result.status_code==200,result.text
     assert client.get('/api/me').status_code==401
-    u=verify(client,result.json(),name='Google Farmer').json()
+    u=verify(client,{**result.json(),'test_code':client.mailbox['google@example.com']},name='Google Farmer').json()
     assert u['google_sub']=='google-123'
     client.cookies.set('ys_google_nonce',nonce)
     assert client.post('/api/auth/google',json={'credential':'x'*30}).status_code==429
@@ -90,7 +99,7 @@ def test_email_meter_destination(auth):
     with main.db() as c:
         result=main.issue(c,u['email'],'meter',{'booking_id':'test'})
     with main.db() as c:
-        consumed=main.consume(c,result['challenge_id'],result['development_code'],'meter',u)
+        consumed=main.consume(c,result['challenge_id'],client.mailbox[u['email']],'meter',u)
         assert consumed['phone']==u['email']
 
 def test_smtp_failure_does_not_create_account(auth,monkeypatch):

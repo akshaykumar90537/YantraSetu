@@ -126,3 +126,34 @@
   }
 }
 
+
+.ys-search-fields, .ys-listings {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr));
+  gap: 16px;
+}
+.ys-search-fields { margin-bottom: 24px; }
+.ys-search-fields label { display: grid; gap: 8px; font-weight: 600; }
+.ys-search-fields select { width: 100%; min-width: 0; padding: 12px; border: 1px solid #bacab9; border-radius: 6px; background: white; color: var(--ys-ink); }
+.ys-listing { padding: 22px; border: 1px solid #d6dfce; border-radius: 10px; background: #fffef9; }
+.ys-listing header { position: static; display: block; background: transparent; padding: 0; }
+.ys-listing h3 { margin: 6px 0; font-size: 20px; }
+.ys-listing-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 18px; }
+.ys-listing [aria-live]:not(:empty) { margin-top: 16px; border-top: 1px solid #d6dfce; padding-top: 12px; }
+
+/* Keep the header controls sized to their labels, including translated text. */
+.ys-nav-actions { flex: 0 0 auto; align-items: center; }
+.ys-nav-actions .ys-language,
+.ys-nav-actions .ys-btn {
+  flex: none;
+  width: auto;
+  max-width: none;
+  min-height: 44px;
+  white-space: nowrap;
+}
+.ys-nav-actions .ys-language { padding-inline: 8px; }
+.ys-nav-actions .ys-btn { gap: 6px; padding-inline: 14px; }
+@media (max-width: 700px) {
+  .ys-nav-actions .ys-language { padding-inline: 4px; }
+  .ys-nav-actions .ys-btn { padding-inline: 10px; }
+}

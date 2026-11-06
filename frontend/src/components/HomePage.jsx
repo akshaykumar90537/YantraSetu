@@ -2,20 +2,8 @@ import React, { useState } from 'react';
 import { ArrowUpRight, ArrowRight, Sprout, Tractor, Wheat, Layers, Droplets, MapPin, CalendarDays, ShieldCheck, Check, Menu, X, Plus, Minus } from 'lucide-react';
 import { TractorArt } from './TractorArt';
 import './HomePage.css';
-
-const equipmentIcons = {
-  tractor: Tractor,
-  harvest: Wheat,
-  implement: Layers,
-  sprayer: Droplets,
-};
-
-const equipmentImages = {
-  tractor: '/images/tractor.jpg',
-  harvest: '/images/harvester.jpg',
-  implement: '/images/implement.jpg',
-  sprayer: '/images/sprayer.jpg',
-};
+import { NearbyEquipment } from './NearbyEquipment';
+import { INR as money, translate } from '../locales';
 
 const contentByLang = {
   en: {
@@ -113,7 +101,7 @@ const contentByLang = {
       desc: 'Simple answers for your first rental.',
     },
     faqs: [
-      ['Can I rent equipment and list my own?', 'Yes. Choose both farmer and owner roles when creating your account to rent equipment and manage your own listings.'],
+      ['Can I rent equipment and list my own?', 'Farmer accounts can rent equipment. Accounts with the owner role can list equipment and manage rental requests, but cannot rent equipment.'],
       ['How is the final rental bill calculated?', 'The booking uses the equipment’s saved rental rate. Hourly rentals use confirmed start and end meter readings; per-acre rentals use the completed acreage. Applicable listed charges are included in the breakdown.'],
       ['Do I pay through YantraSetu?', 'Payments are arranged directly between the farmer and equipment owner. YantraSetu keeps rental bills and manually reported payment statuses; it does not collect money or independently verify those payments.'],
       ['Is a requested time slot immediately confirmed?', 'A request is pending until the owner approves it. Check your booking status before making plans to collect or use the equipment.'],
@@ -225,7 +213,7 @@ const contentByLang = {
       desc: 'आपके पहले किराए के लिए सरल उत्तर।',
     },
     faqs: [
-      ['क्या मैं उपकरण किराए पर लेने के साथ अपना भी सूचीबद्ध कर सकता हूँ?', 'हाँ। खाता बनाते समय किसान और मालिक दोनों भूमिकाएं चुनें।'],
+      ['क्या मैं उपकरण किराए पर लेने के साथ अपना भी सूचीबद्ध कर सकता हूँ?', 'किसान खाते उपकरण किराए पर ले सकते हैं। मालिक की भूमिका वाले खाते उपकरण सूचीबद्ध कर सकते हैं और अनुरोध संभाल सकते हैं, लेकिन किराए पर नहीं ले सकते।'],
       ['किराए का अंतिम बिल कैसे बनता है?', 'बुकिंग उपकरण की निर्धारित किराया दर का उपयोग करती है। प्रति घंटा किराए में मीटर रीडिंग और प्रति एकड़ में पूर्ण एकड़ का उपयोग होता है।'],
       ['क्या भुगतान यंत्रसेतु के माध्यम से होता है?', 'भुगतान किसान और मालिक के बीच सीधे तय होता है। यंत्रसेतु केवल बिल और मैन्युअल रिपोर्ट किए गए स्टेटस का रिकॉर्ड रखता है।'],
       ['क्या अनुरोधित समय स्लॉट तुरंत पक्का हो जाता है?', 'अनुरोध तब तक लंबित रहता है जब तक मालिक इसे स्वीकार न कर ले। काम की योजना बनाने से पहले स्थिति जरूर जांचें।'],
@@ -337,7 +325,7 @@ const contentByLang = {
       desc: 'ਤੁਹਾਡੇ ਪਹਿਲੇ ਕਿਰਾਏ ਲਈ ਸੌਖੇ ਜਵਾਬ।',
     },
     faqs: [
-      ['ਕੀ ਮੈਂ ਮਸ਼ੀਨਰੀ ਕਿਰਾਏ ਤੇ ਲੈਣ ਦੇ ਨਾਲ ਆਪਣੀ ਵੀ ਲਿਸਟ ਕਰ ਸਕਦਾ ਹਾਂ?', 'ਹਾਂ। ਖਾਤਾ ਬਣਾਉਂਦੇ ਸਮੇਂ ਕਿਸਾਨ ਅਤੇ ਮਾਲਕ ਦੋਵੇਂ ਭੂਮਿਕਾਵਾਂ ਚੁਣੋ।'],
+      ['ਕੀ ਮੈਂ ਮਸ਼ੀਨਰੀ ਕਿਰਾਏ ਤੇ ਲੈਣ ਦੇ ਨਾਲ ਆਪਣੀ ਵੀ ਲਿਸਟ ਕਰ ਸਕਦਾ ਹਾਂ?', 'ਕਿਸਾਨ ਖਾਤੇ ਮਸ਼ੀਨਾਂ ਕਿਰਾਏ ’ਤੇ ਲੈ ਸਕਦੇ ਹਨ। ਮਾਲਕ ਦੀ ਭੂਮਿਕਾ ਵਾਲੇ ਖਾਤੇ ਮਸ਼ੀਨਾਂ ਸੂਚੀ ਵਿੱਚ ਪਾ ਸਕਦੇ ਹਨ ਅਤੇ ਬੇਨਤੀਆਂ ਸੰਭਾਲ ਸਕਦੇ ਹਨ, ਪਰ ਕਿਰਾਏ ’ਤੇ ਨਹੀਂ ਲੈ ਸਕਦੇ।'],
       ['ਕਿਰਾਏ ਦਾ ਅੰਤਿਮ ਬਿਲ ਕਿਵੇਂ ਬਣਦਾ ਹੈ?', 'ਬੁਕਿੰਗ ਮਸ਼ੀਨ ਦੀ ਤੈਅ ਕਿਰਾਇਆ ਦਰ ਵਰਤਦੀ ਹੈ। ਪ੍ਰਤੀ ਘੰਟੇ ਵਿੱਚ ਮੀਟਰ ਰੀਡਿੰਗ ਅਤੇ ਪ੍ਰਤੀ ਏਕੜ ਵਿੱਚ ਵਾਹੀ ਜ਼ਮੀਨ ਦਾ ਹਿਸਾਬ ਹੁੰਦਾ ਹੈ।'],
       ['ਕੀ ਭੁਗਤਾਨ ਯੰਤਰਸੇਤੂ ਰਾਹੀਂ ਹੁੰਦਾ ਹੈ?', 'ਭੁਗਤਾਨ ਕਿਸਾਨ ਅਤੇ ਮਾਲਕ ਵਿਚਕਾਰ ਸਿੱਧਾ ਹੁੰਦਾ ਹੈ। ਯੰਤਰਸੇਤੂ ਕੇਵਲ ਬਿਲ ਅਤੇ ਰਿਕਾਰਡ ਰੱਖਦਾ ਹੈ।'],
       ['ਕੀ ਮੰਗਿਆ ਗਿਆ ਸਮਾਂ ਤੁਰੰਤ ਪੱਕਾ ਹੋ ਜਾਂਦਾ ਹੈ?', 'ਬੇਨਤੀ ਉਦੋਂ ਤੱਕ ਉਡੀਕ ਅਧੀਨ ਰਹਿੰਦੀ ਹੈ ਜਦੋਂ ਤੱਕ ਮਾਲਕ ਪ੍ਰਵਾਨ ਨਾ ਕਰੇ। ਕੰਮ ਸ਼ੁਰੂ ਕਰਨ ਤੋਂ ਪਹਿਲਾਂ ਸਥਿਤੀ ਜ਼ਰੂਰ ਵੇਖੋ।'],
@@ -356,11 +344,11 @@ const contentByLang = {
   },
 };
 
-const money = value => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(value);
 
 export function HomePage({ onSignIn, lang = 'en', setLang }) {
   const [menu, setMenu] = useState(false);
-  const [selected, setSelected] = useState(0);
+  const [estimateName, setEstimateName] = useState('');
+  const label = key => translate(lang, key);
   const [role, setRole] = useState('farmer');
   const [unit, setUnit] = useState('hour');
   const [quantity, setQuantity] = useState(4);
@@ -369,22 +357,26 @@ export function HomePage({ onSignIn, lang = 'en', setLang }) {
   const [faq, setFaq] = useState(null);
 
   const t = contentByLang[lang] || contentByLang.en;
-  const machine = t.equipment[selected] || t.equipment[0];
-  const MachineIcon = equipmentIcons[machine.key] || Tractor;
   const journey = t.journeys[role] || t.journeys.farmer;
 
   const rateNumber = Number(rate);
   const transportNumber = Number(transport);
   const validEstimate = rate !== '' && transport !== '' && Number.isFinite(rateNumber) && rateNumber >= 0 && rateNumber <= 100000 && Number.isFinite(transportNumber) && transportNumber >= 0 && transportNumber <= 100000;
 
-  const unitText = unit === 'hour' ? t.calc.perHour.toLowerCase() : t.calc.perAcre.toLowerCase();
+  function estimate(machine) {
+    setEstimateName(machine.name);
+    setRate(String(machine.rate));
+    setUnit(machine.unit);
+    setTransport(String(machine.mobilization));
+    document.getElementById('ys-estimate').focus();
+  }
 
   return (
     <div className="ys-home" id="ys-top">
       <a className="ys-skip" href="#ys-main">{t.nav.skip}</a>
       <header className="ys-nav">
         <a className="ys-logo" href="#ys-top" aria-label="YantraSetu home">
-          <span><Sprout size={25} /></span>
+          <img src="/icon.svg" width="40" height="40" alt="" style={{ flexShrink: 0 }} />
           <div>YantraSetu<small>{t.nav.growTogether}</small></div>
         </a>
         <nav className={menu ? 'ys-links is-open' : 'ys-links'} aria-label="Main navigation">
@@ -410,7 +402,7 @@ export function HomePage({ onSignIn, lang = 'en', setLang }) {
               <option value="pa">ਪੰਜਾਬੀ</option>
             </select>
           )}
-          <button className="ys-btn ys-btn-dark" onClick={onSignIn}>
+          <button className="ys-btn ys-btn-dark" onClick={() => onSignIn()}>
             {t.nav.signIn} <ArrowUpRight size={16} />
           </button>
           <button
@@ -430,18 +422,13 @@ export function HomePage({ onSignIn, lang = 'en', setLang }) {
           <div className="ys-hero-copy">
             <span className="ys-eyebrow"><span className="ys-dot" /> {t.hero.eyebrow}</span>
             <h1>
-              {t.hero.titleLine1}<br />
-              {t.hero.titleLine2}<br />
-              <em>{t.hero.titleEm}</em>
+              {label('rentalTitle')} <em>{label('rentalEm')}</em>
             </h1>
-            <p>{t.hero.desc}</p>
+            <p>{label('rentalIntro')}</p>
             <div className="ys-actions">
-              <button className="ys-btn ys-btn-lime" onClick={onSignIn}>
-                {t.hero.findBtn} <ArrowUpRight size={19} />
-              </button>
-              <a className="ys-text-link" href="#ys-how">
-                {t.hero.howBtn} <ArrowRight size={17} />
+              <a className="ys-btn ys-btn-lime" href="#ys-equipment">{t.hero.findBtn} <ArrowUpRight size={19} />
               </a>
+              <button className="ys-text-link" onClick={() => onSignIn({ type: 'machine' })}>{label('listOwn')} <ArrowRight size={17} /></button>
             </div>
             <div className="ys-hero-foot">
               <span><MapPin size={15} /> {t.hero.footNear}</span>
@@ -474,62 +461,15 @@ export function HomePage({ onSignIn, lang = 'en', setLang }) {
         </div>
 
         {/* Equipment Categories */}
-        <section className="ys-section" id="ys-equipment">
+        <section className="ys-section" id="ys-equipment" tabIndex={-1}>
           <div className="ys-section-head">
             <div>
               <span className="ys-eyebrow">{t.equipmentHead.eyebrow}</span>
-              <h2>{t.equipmentHead.title}</h2>
+              <h2>{label('nearbyTitle')}</h2>
             </div>
-            <p>{t.equipmentHead.desc}</p>
+            <p>{label('nearbyIntro')}</p>
           </div>
-          <div className="ys-equipment-tabs" aria-label="Equipment categories">
-            {t.equipment.map((item, i) => {
-              const IconComp = equipmentIcons[item.key] || Tractor;
-              const imgUrl = equipmentImages[item.key];
-              return (
-                <button
-                  key={item.key}
-                  aria-pressed={selected === i}
-                  className={selected === i ? 'is-selected' : ''}
-                  onClick={() => setSelected(i)}
-                >
-                  <div className="ys-tab-thumb-wrap">
-                    <img src={imgUrl} alt={item.name} className="ys-tab-thumb" />
-                  </div>
-                  <span>{item.name}</span>
-                  <ArrowUpRight size={16} />
-                </button>
-              );
-            })}
-          </div>
-          <div className={`ys-equipment-detail ys-${machine.color}`}>
-            <div className="ys-equipment-visual">
-              <img
-                src={equipmentImages[machine.key]}
-                alt={machine.name}
-                className="ys-equipment-img"
-              />
-              <div className="ys-equipment-overlay" />
-              <div className="ys-equipment-badge">
-                <MachineIcon size={16} />
-                <span>{machine.name.toUpperCase()}</span>
-              </div>
-              <span className="ys-visual-number">0{selected + 1}</span>
-            </div>
-            <div className="ys-equipment-copy" aria-live="polite">
-              <span className="ys-eyebrow">{machine.tag}</span>
-              <h3>{machine.title}</h3>
-              <p>{machine.description}</p>
-              <div className="ys-pills">
-                {machine.uses.map(use => (
-                  <span key={use}><Check size={13} />{use}</span>
-                ))}
-              </div>
-              <button className="ys-text-link" onClick={onSignIn}>
-                {t.equipmentHead.signInToExplore} <ArrowUpRight size={18} />
-              </button>
-            </div>
-          </div>
+          <NearbyEquipment lang={lang} onEstimate={estimate} onRequest={machine => onSignIn({ type: 'book', machine })} />
         </section>
 
         {/* How It Works */}
@@ -556,7 +496,7 @@ export function HomePage({ onSignIn, lang = 'en', setLang }) {
               <div>
                 <h3>{journey.title}</h3>
                 <p>{journey.intro}</p>
-                <button className="ys-btn ys-btn-dark" onClick={onSignIn}>
+                <button className="ys-btn ys-btn-dark" onClick={() => role === 'owner' ? onSignIn({ type: 'machine' }) : document.getElementById('ys-equipment').focus()}>
                   {journey.cta} <ArrowUpRight size={17} />
                 </button>
               </div>
@@ -576,7 +516,7 @@ export function HomePage({ onSignIn, lang = 'en', setLang }) {
         </section>
 
         {/* Rental Estimate Calculator */}
-        <section className="ys-section ys-calculator" id="ys-estimate">
+        <section className="ys-section ys-calculator" id="ys-estimate" tabIndex={-1}>
           <div>
             <span className="ys-eyebrow">{t.calc.eyebrow}</span>
             <h2>{t.calc.title.split('\n').map((line, idx) => (
@@ -593,6 +533,7 @@ export function HomePage({ onSignIn, lang = 'en', setLang }) {
               <h3>{t.calc.cardTitle}</h3>
               <span>{t.calc.exampleBadge}</span>
             </div>
+            {estimateName && <p><strong>{label('listingEstimate')}</strong> · {estimateName}</p>}
             <div className="ys-estimate-inputs">
               <label>
                 {t.calc.unitLabel}
@@ -602,12 +543,12 @@ export function HomePage({ onSignIn, lang = 'en', setLang }) {
                 </select>
               </label>
               <label>
-                {t.calc.rateLabel.replace('{unit}', unitText)}
+                {label(unit === 'hour' ? 'hourlyLabel' : 'acreLabel')}
                 <input
                   type="number"
                   min="0"
                   max="100000"
-                  step="1"
+                  step="0.01"
                   value={rate}
                   onChange={e => setRate(e.target.value)}
                 />
@@ -631,7 +572,7 @@ export function HomePage({ onSignIn, lang = 'en', setLang }) {
                 type="number"
                 min="0"
                 max="100000"
-                step="1"
+                step="0.01"
                 value={transport}
                 onChange={e => setTransport(e.target.value)}
               />
@@ -688,7 +629,7 @@ export function HomePage({ onSignIn, lang = 'en', setLang }) {
           <h2>{t.final.title.split('\n').map((line, idx) => (
             <React.Fragment key={idx}>{line}{idx === 0 && <br />}</React.Fragment>
           ))}</h2>
-          <button className="ys-btn ys-btn-lime" onClick={onSignIn}>
+          <button className="ys-btn ys-btn-lime" onClick={() => onSignIn()}>
             {t.final.btn} <ArrowUpRight size={18} />
           </button>
           <p>{t.final.sub}</p>
@@ -697,7 +638,7 @@ export function HomePage({ onSignIn, lang = 'en', setLang }) {
 
       <footer className="ys-footer">
         <a className="ys-logo" href="#ys-top">
-          <Sprout />
+          <img src="/icon.svg" width="34" height="34" alt="" style={{ flexShrink: 0 }} />
           <div>YantraSetu<small>{t.footer.tagline}</small></div>
         </a>
         <p>{t.footer.note}</p>

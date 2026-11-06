@@ -4,6 +4,7 @@ import { HomePage } from './HomePage';
 
 export function LandingPage({ onUser, lang, setLang }) {
   const [showLogin, setShowLogin] = useState(false);
+  const [intent, setIntent] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
@@ -21,7 +22,7 @@ export function LandingPage({ onUser, lang, setLang }) {
 
   return (
     <div className="home-entry">
-      <HomePage onSignIn={() => setShowLogin(true)} lang={lang} setLang={setLang} />
+      <HomePage onSignIn={(next = null) => { setIntent(next); setShowLogin(true); }} lang={lang} setLang={setLang} />
 
       {/* ─── Login / Sign Up Modal ─── */}
       {showLogin && (
@@ -47,7 +48,8 @@ export function LandingPage({ onUser, lang, setLang }) {
             <LoginForm
               busy={busy}
               run={run}
-              onUser={onUser}
+              onUser={(user) => onUser(user, intent)}
+              defaultRole={intent?.type === 'machine' ? 'owner' : 'farmer'}
               lang={lang}
               setLang={setLang}
             />

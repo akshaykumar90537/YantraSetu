@@ -1,10 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { Sprout } from 'lucide-react';
 import { api } from '../api';
 
 /**
  * AuthGate: checks for an existing session on mount.
- * - If session is found  → passes user to children(user, signOut)
+ * - If session is found  → passes user to children(user, signOut, setUser)
  * - If no session / error → passes null to children(null, signOut)
  * Never blocks indefinitely: resolves after the fetch settles
  * (or after a 4-second safety timeout so the app always loads).
@@ -46,7 +45,7 @@ export function AuthGate({ children }) {
   if (checking) {
     return (
       <main className="auth-loading" role="status" aria-live="polite">
-        <Sprout size={32} />
+        <img src="/icon.svg" width="32" height="32" alt="" style={{ flexShrink: 0 }} />
         <p>Checking your session…</p>
       </main>
     );
@@ -54,5 +53,5 @@ export function AuthGate({ children }) {
 
   function signOut() { setUser(null); }
 
-  return children(user, signOut);
+  return children(user, signOut, setUser);
 }

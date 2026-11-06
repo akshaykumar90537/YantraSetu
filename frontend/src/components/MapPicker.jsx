@@ -209,6 +209,7 @@ export function MapPicker({
         </div>
       `;
 
+      if (!onSelectMachine) popupContent.querySelector('button')?.remove();
       marker.bindPopup(popupContent);
       marker.on('popupopen', () => {
         const btn = document.getElementById(`book-btn-${m.id}`);

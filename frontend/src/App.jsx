@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Sprout,
   Search,
@@ -22,9 +22,10 @@ import {
   PanelLeftOpen,
   CloudSun,
 } from 'lucide-react';
-import { api } from './api';
+import { canRent, api } from './api';
 import { dict, INR, dt, translate } from './locales';
-import { TractorArt } from './components/TractorArt';
+import { VillagePicker, recentVillage } from './components/VillagePicker';
+import { FleetWeek, bookingGroup } from './components/FleetWeek';
 import { FormField, Stat, TimeFields } from './components/Common';
 import { LoginForm } from './components/LoginForm';
 import { MachineCard } from './components/MachineCard';
@@ -42,20 +43,17 @@ import './style.css';
 import { AuthGate } from './components/AuthGate';
 
 export function App() {
+  const [entry, setEntry] = useState(null);
   const [lang, setLang] = useState(localStorage.getItem('ys-lang') || 'en');
 
   return (
     <AuthGate>
-      {(user, onLogout) =>
+      {(user, onLogout, signIn) =>
         user ? (
-          <Workspace key={user.id} initialUser={user} onLogout={onLogout} sharedLang={lang} setSharedLang={setLang} />
+          <Workspace key={user.id} initialUser={user} entry={entry} onLogout={onLogout} sharedLang={lang} setSharedLang={setLang} />
         ) : (
           <LandingPage
-            onUser={(u) => {
-              /* AuthGate re-checks session after login succeeds via cookie,
-                 but LoginForm calls onUser directly so we reload to re-trigger AuthGate */
-              window.location.reload();
-            }}
+            onUser={(user, intent) => { setEntry(intent); signIn(user); }}
             lang={lang}
             setLang={setLang}
           />
@@ -65,22 +63,28 @@ export function App() {
   );
 }
 
-function Workspace({ initialUser, onLogout, sharedLang, setSharedLang }) {
+function Workspace({ entry, initialUser, onLogout, sharedLang, setSharedLang }) {
   const [lang, setLangLocal] = useState(sharedLang || localStorage.getItem('ys-lang') || 'en');
   const setLang = (v) => { setLangLocal(v); if (setSharedLang) setSharedLang(v); };
   const t = (k, p) => translate(lang, k, p);
 
   const [u, setUser] = useState(initialUser);
-  const [tab, setTab] = useState('explore');
+  const isOwner = u.roles.includes('owner');
+  const rentalAllowed = canRent(u);
+  const [tab, setTab] = useState('dashboard');
   const [sidebarOpen, setSidebarOpen] = useState(() => {
     if (typeof window !== 'undefined') {
       return window.innerWidth > 1024;
     }
     return true;
   });
-  const [error, setError] = useState('');
+  const [error, setError] = useState(() => entry?.type === 'machine' && !initialUser.roles.includes('owner') ? t('ownerRequired') : entry?.type === 'book' && !rentalAllowed ? t('rentalRoleRule') : entry?.machine?.owner_id === initialUser.id ? t('ownMachineError') : '');
   const [notice, setNotice] = useState('');
-  const [modal, setModal] = useState(null);
+  const [modal, setModal] = useState(() => {
+    if (entry?.type === 'machine' && initialUser.roles.includes('owner')) return entry;
+    if (entry?.type === 'book' && rentalAllowed && entry.machine.owner_id !== initialUser.id) return entry;
+    return null;
+  });
   const [online, setOnline] = useState(navigator.onLine);
   const [busy, setBusy] = useState(false);
 
@@ -91,8 +95,10 @@ function Workspace({ initialUser, onLogout, sharedLang, setSharedLang }) {
   const [notifications, setNotifications] = useState([]);
   const [category, setCategory] = useState('');
   const [radius, setRadius] = useState('5');
-  const [lat, setLat] = useState('30.901');
-  const [lon, setLon] = useState('75.857');
+  const [lat, setLat] = useState(() => String(recentVillage().lat));
+  const [lon, setLon] = useState(() => String(recentVillage().lon));
+  const [calendarDate,setCalendarDate] = useState(null);
+  const searchVersion = useRef(0);
   const [cached, setCached] = useState(false);
   const [searched, setSearched] = useState(false);
   const [drafts, setDrafts] = useState([]);
@@ -183,21 +189,25 @@ function Workspace({ initialUser, onLogout, sharedLang, setSharedLang }) {
     }
   }
 
-  async function search() {
-    const key = `ys-search-${lat}-${lon}-${radius}-${category}`;
+  async function search(latitude=lat, longitude=lon) {
+    const version = ++searchVersion.current;
+    const key = `ys-search-${u.id}-${latitude}-${longitude}-${radius}-${category}`;
     try {
       const data = await api(
-        `/machines?latitude=${lat}&longitude=${lon}&radius=${radius}&category=${encodeURIComponent(
+        `/machines?latitude=${latitude}&longitude=${longitude}&radius=${radius}&category=${encodeURIComponent(
           category
         )}`
       );
+      if(version !== searchVersion.current) return;
       setMachines(data);
       localStorage.setItem(key, JSON.stringify({ at: new Date().toISOString(), data }));
       setCached(false);
     } catch (e) {
-      const cache = localStorage.getItem(key);
-      if (cache) {
-        setMachines(JSON.parse(cache).data);
+      if(version !== searchVersion.current) return;
+      let cache;
+      try { cache = JSON.parse(localStorage.getItem(key) || 'null'); } catch {}
+      if (Array.isArray(cache?.data)) {
+        setMachines(cache.data);
         setCached(true);
       } else {
         setMachines([]);
@@ -207,24 +217,33 @@ function Workspace({ initialUser, onLogout, sharedLang, setSharedLang }) {
     setSearched(true);
   }
 
+  const latestLoad = useRef(0);
+  const [dataState,setDataState] = useState({});
+  const [revision,setRevision] = useState(0);
   async function load() {
-    try {
-      const [b, f, o, n] = await Promise.all([
-        api('/bookings').catch(() => []),
-        api('/fleet').catch(() => []),
-        api('/organizations').catch(() => []),
-        api('/notifications').catch(() => []),
-      ]);
-      setRows(Array.isArray(b) ? b : []);
-      setFleet(Array.isArray(f) ? f : []);
-      setOrgs(Array.isArray(o) ? o : []);
-      setNotifications(Array.isArray(n) ? n : []);
-    } catch {
-      setRows([]);
-      setFleet([]);
-      setOrgs([]);
-      setNotifications([]);
-    }
+    const id = ++latestLoad.current;
+    const sources = [['bookings',setRows],['notifications',setNotifications]];
+    if (isOwner) sources.push(['fleet',setFleet]);
+    if (u.roles.includes('fpo')) sources.push(['organizations',setOrgs]);
+    await Promise.all(sources.map(async ([key,save]) => {
+      try {
+        const data = await api('/'+key);
+        if (!Array.isArray(data)) throw new Error();
+        if (id !== latestLoad.current) return;
+        save(data);
+        setDataState(prev=>({...prev,[key]:'ready'}));
+      } catch {
+        if (id === latestLoad.current) setDataState(prev=>({...prev,[key]:'error'}));
+      }
+    }));
+    if(id === latestLoad.current) setRevision(n=>n+1);
+  }
+
+  function loadingOrError(keys) {
+    const failed=keys.some(key=>dataState[key]==='error');
+    if(failed) return <div className="alert" role="alert">{keys.includes('bookings') && dataState.bookings==='error' ? t('bookingError') : t('workError')} <button className="outline" onClick={()=>run(load)}>{t('retrySearch')}</button></div>;
+    if(keys.some(key=>dataState[key]!=='ready')) return <p role="status">{t('loadingWork')}</p>;
+    return null;
   }
 
   function saveDrafts(next) {
@@ -233,6 +252,7 @@ function Workspace({ initialUser, onLogout, sharedLang, setSharedLang }) {
   }
 
   const nav = [
+    ['dashboard', CalendarDays, t('dashboard')],
     ['explore', Search, t('explore')],
     ['bookings', CalendarDays, t('bookings')],
     ['weather', CloudSun, t('weatherTab')],
@@ -250,6 +270,10 @@ function Workspace({ initialUser, onLogout, sharedLang, setSharedLang }) {
       setModal({ type: 'login' });
       return;
     }
+    if (!rentalAllowed) {
+      setError(t('rentalRoleRule'));
+      return;
+    }
     if (m.owner_id === u.id) {
       setError('You cannot book your own equipment.');
       return;
@@ -261,6 +285,19 @@ function Workspace({ initialUser, onLogout, sharedLang, setSharedLang }) {
     setModal({ type: 'book', machine: m });
   }
 
+  const [scrollTarget,setScrollTarget] = useState('');
+  function showBookings(id) { setTab('bookings'); setScrollTarget(id); }
+  useEffect(() => {
+    if (tab !== 'bookings' || !scrollTarget || dataState.bookings !== 'ready') return;
+    document.getElementById(scrollTarget)?.scrollIntoView({block:'start'});
+    setScrollTarget('');
+  },[tab,scrollTarget,dataState.bookings]);
+  const active = rows.filter(b=>['PENDING','APPROVED','IN_PROGRESS'].includes(b.status)).sort((a,b)=>Date.parse(a.start_at)-Date.parse(b.start_at));
+  const pending = active.filter(b=>b.owner_id===u.id && b.status==='PENDING');
+  const today = new Date(); today.setHours(0,0,0,0);
+  const tomorrow = new Date(today); tomorrow.setDate(today.getDate()+1);
+  const todayJobs = active.filter(b=>b.owner_id===u.id && b.status!=='PENDING' && Date.parse(b.start_at)<tomorrow && Date.parse(b.end_at)>today);
+  const nextRental = active.find(b=>b.status==='IN_PROGRESS') || active.find(b=>Date.parse(b.end_at)>Date.now());
   const completed = (Array.isArray(rows) ? rows : []).filter((b) => b && b.status === 'COMPLETED');
 
   return (
@@ -281,13 +318,11 @@ function Workspace({ initialUser, onLogout, sharedLang, setSharedLang }) {
             href="#"
             onClick={(e) => {
               e.preventDefault();
-              setTab('explore');
+              setTab('dashboard');
               if (window.innerWidth <= 760) setSidebarOpen(false);
             }}
           >
-            <span className="brand-mark">
-              <Sprout size={24} />
-            </span>
+            <img src="/icon.svg" width="40" height="40" alt="" style={{ flexShrink: 0 }} />
             <span className="brand-text">
               YantraSetu<small>{t('growingTogether')}</small>
             </span>
@@ -438,38 +473,20 @@ function Workspace({ initialUser, onLogout, sharedLang, setSharedLang }) {
             </div>
           )}
 
-          {tab === 'explore' ? (
+          {tab === 'dashboard' ? <section className="work-dashboard">
+            <div className="section-title"><div><span className="eyebrow">{t('dashboard')}</span><h1>{u.name}</h1></div></div>
+            {loadingOrError(isOwner?['bookings','fleet']:['bookings']) || (isOwner ? <div className="work-tiles">
+              <article><h2>{t('requestsReview')}</h2><strong>{pending.length}</strong><button className="primary" disabled={!pending.length} onClick={()=>showBookings('actionGroup')}>{t('reviewRequests')}</button></article>
+              <article><h2>{t('todayJobs')}</h2><strong>{todayJobs.length}</strong>{todayJobs.map(b=><button className="text-button" key={b.id} onClick={()=>showBookings('booking-'+b.id)}>{b.machine_name} · {dt(b.start_at)}</button>)}</article>
+              <article><h2>{t('fleet')}</h2><strong>{fleet.length}</strong><button className="outline" onClick={()=>setTab('fleet')}>{t('fleetWeek')}</button><button className="text-button" onClick={()=>setModal({type:'machine'})}>{t('addMachinery')}</button></article>
+            </div> : <article className="panel next-rental"><h2>{t('nextRental')}</h2>{nextRental ? <>
+              <strong>{nextRental.machine_name}</strong><p>{dt(nextRental.start_at)} – {dt(nextRental.end_at)}</p>
+              <p>{t(nextRental.status)} · {t(nextRental.needs_meter_confirmation && nextRental.farmer_id===u.id ? 'confirmReadingBtn' : nextRental.status==='PENDING' ? 'waitingOwner' : 'viewDetails')}</p>
+              <button className="primary" onClick={()=>showBookings('booking-'+nextRental.id)}>{t('viewDetails')}</button></> : <p>{t('noUpcoming')}</p>}
+              {rentalAllowed && <button className={nextRental?'outline':'primary'} onClick={()=>setTab('explore')}>{t('findVillage')}</button>}</article>)}
+          </section> : tab === 'explore' ? (
             <>
-              <section className="hero">
-                <div className="hero-content">
-                  <div className="eyebrow">
-                    <span /> {t('eyebrow')}
-                  </div>
-                  <h1>{t('headline')}</h1>
-                  <p>{t('sub')}</p>
-                  <div className="hero-benefits">
-                    <span>
-                      <ShieldCheck size={16} /> {t('clearRentalRates')}
-                    </span>
-                    <span>
-                      <MapPin size={16} /> {t('nearbyOwners')}
-                    </span>
-                  </div>
-                </div>
-                <div className="hero-art">
-                  <TractorArt large />
-                  <span className="art-note">{t('artNote')}</span>
-                  <div className="floating-note">
-                    <span className="leaf-circle">
-                      <Sprout size={20} />
-                    </span>
-                    <div>
-                      <strong>{t('betterTogether')}</strong>
-                      <small>{t('oneVillage')}</small>
-                    </div>
-                  </div>
-                </div>
-              </section>
+              <h1>{t('explore')}</h1>
 
               <form
                 className="search-panel"
@@ -478,36 +495,8 @@ function Workspace({ initialUser, onLogout, sharedLang, setSharedLang }) {
                   run(search);
                 }}
               >
-                <div className="search-location">
-                  <MapPin size={21} />
-                  <div>
-                    <label>{t('location')}</label>
-                    <div className="coordinates">
-                      <input
-                        aria-label="Latitude"
-                        type="number"
-                        step="any"
-                        min="-90"
-                        max="90"
-                        required
-                        value={lat}
-                        onChange={(e) => setLat(e.target.value)}
-                      />
-                      <span>,</span>
-                      <input
-                        aria-label="Longitude"
-                        type="number"
-                        step="any"
-                        min="-180"
-                        max="180"
-                        required
-                        value={lon}
-                        onChange={(e) => setLon(e.target.value)}
-                      />
-                    </div>
-                    <small>{t('enterCoordinates')}</small>
-                  </div>
-                </div>
+                <VillagePicker latitude={lat} longitude={lon} label={t('villagePicker')} customLabel={t('mapLocation')}
+                  onChange={p=>{setLat(String(p.lat));setLon(String(p.lon));search(p.lat,p.lon);}} />
                 <FormField label={t('equipmentType')}>
                   <select value={category} onChange={(e) => setCategory(e.target.value)}>
                     <option value="">{t('allMachinery')}</option>
@@ -605,12 +594,7 @@ function Workspace({ initialUser, onLogout, sharedLang, setSharedLang }) {
                           <MapPin size={16} />
                           {showMap ? 'Hide Map' : 'Show Map'}
                         </button>
-                        <button
-                          className="outline"
-                          onClick={() => (u ? setModal({ type: 'machine' }) : setModal({ type: 'login' }))}
-                        >
-                          <Plus size={16} /> {t('listMachine')}
-                        </button>
+                        {isOwner && <button className="outline" onClick={() => setModal({type:'machine'})}><Plus size={16} /> {t('listMachine')}</button>}
                       </div>
                     </div>
 
@@ -623,17 +607,9 @@ function Workspace({ initialUser, onLogout, sharedLang, setSharedLang }) {
                           onSelectLocation={(newLat, newLon) => {
                             setLat(newLat);
                             setLon(newLon);
-                            const key = `ys-search-${newLat}-${newLon}-${radius}-${category}`;
-                            api(
-                              `/machines?latitude=${newLat}&longitude=${newLon}&radius=${radius}&category=${encodeURIComponent(category)}`
-                            )
-                              .then((data) => {
-                                setMachines(data);
-                                localStorage.setItem(key, JSON.stringify({ at: new Date().toISOString(), data }));
-                              })
-                              .catch(() => {});
+                            search(newLat,newLon);
                           }}
-                          onSelectMachine={openBooking}
+                          onSelectMachine={rentalAllowed ? openBooking : undefined}
                           height="380px"
                           showLocate={true}
                           lang={lang}
@@ -647,7 +623,7 @@ function Workspace({ initialUser, onLogout, sharedLang, setSharedLang }) {
                           key={m.id}
                           machine={m}
                           index={i}
-                          onBook={openBooking}
+                          onBook={rentalAllowed ? openBooking : undefined}
                           lang={lang}
                         />
                       ))}
@@ -700,9 +676,8 @@ function Workspace({ initialUser, onLogout, sharedLang, setSharedLang }) {
                 </div>
               ) : (
                 <>
-                  {tab === 'bookings' && (
-                    <>
-                      <div className="stats">
+                  {tab === 'bookings' && (<>
+                      {loadingOrError(['bookings']) || <><div className="stats">
                         <Stat
                           label={t('activeBookings')}
                           value={
@@ -711,24 +686,24 @@ function Workspace({ initialUser, onLogout, sharedLang, setSharedLang }) {
                             ).length
                           }
                         />
-                        <Stat
-                          label={t('ownerEarnings')}
+                        {isOwner && <Stat
+                          label={t('billedEarnings')}
                           value={INR(
                             completed
                               .filter((b) => b && b.owner_id === u?.id)
                               .reduce((s, b) => s + Number(b.final_total || 0), 0)
                           )}
-                        />
-                        <Stat
-                          label={t('farmerExpenditures')}
+                        />}
+                        {rentalAllowed && <Stat
+                          label={t('billedCosts')}
                           value={INR(
                             completed
                               .filter((b) => b && b.farmer_id === u?.id)
                               .reduce((s, b) => s + Number(b.final_total || 0), 0)
                           )}
-                        />
+                        />}
                       </div>
-                      <p className="caption">{t('billedCaption')}</p>
+                      <p className="caption">{t('billedCaption')}</p></>}
 
                       {drafts.length > 0 && (
                         <section className="panel">
@@ -738,7 +713,7 @@ function Workspace({ initialUser, onLogout, sharedLang, setSharedLang }) {
                               <span>{dt(d.start_at)}</span>
                               <button
                                 className="outline"
-                                disabled={!online}
+                                disabled={busy || !online || !rentalAllowed}
                                 onClick={() =>
                                   run(async () => {
                                     await api('/bookings', d);
@@ -769,9 +744,11 @@ function Workspace({ initialUser, onLogout, sharedLang, setSharedLang }) {
                         </section>
                       )}
 
-                      {(Array.isArray(rows) ? rows : []).map((b) => (
+                      {dataState.bookings === 'ready' && ['actionGroup','upcomingGroup','historyGroup'].map(group => {
+                        const items = rows.filter(b => bookingGroup(b,u.id) === group).sort((a,b)=>(group==='historyGroup'?-1:1)*(Date.parse(a.start_at)-Date.parse(b.start_at)));
+                        return items.length ? <section key={group} id={group}><h2>{t(group)} ({items.length})</h2>{items.map(b=><div id={'booking-'+b.id} key={b.id}>
                         <BookingCard
-                          key={b?.id || Math.random()}
+                          key={b.id}
                           booking={b}
                           user={u}
                           busy={busy}
@@ -781,9 +758,10 @@ function Workspace({ initialUser, onLogout, sharedLang, setSharedLang }) {
                           notify={setNotice}
                           lang={lang}
                         />
-                      ))}
+                        {isOwner && b.owner_id===u.id && b.status==='PENDING' && <button className="outline compare-week" onClick={()=>{setCalendarDate(b.start_at);setTab('fleet');}}>{t('compareWeek')}</button>}
+                      </div>)}</section> : null; })}
 
-                      {!rows.length && (
+                      {dataState.bookings === 'ready' && !rows.length && (
                         <div className="empty">
                           <CalendarDays size={36} />
                           <h3>{t('noBookingsYet')}</h3>
@@ -795,11 +773,12 @@ function Workspace({ initialUser, onLogout, sharedLang, setSharedLang }) {
 
                   {tab === 'fleet' && (
                     <>
+                      {loadingOrError(['fleet','bookings']) || <FleetWeek initialDate={calendarDate} {...{fleet,rows,lang,t,revision}} onBooking={b=>showBookings('booking-'+b.id)} />}
                       <button className="primary" onClick={() => setModal({ type: 'machine' })}>
                         <Plus size={17} />
                         {t('addMachinery')}
                       </button>
-                      <div className="table-wrap">
+                      {dataState.fleet === 'ready' && <div className="table-wrap">
                         <table>
                           <thead>
                             <tr>
@@ -899,11 +878,11 @@ function Workspace({ initialUser, onLogout, sharedLang, setSharedLang }) {
                             })}
                           </tbody>
                         </table>
-                      </div>
+                      </div>}
                     </>
                   )}
 
-                  {tab === 'org' && (
+                  {tab === 'org' && (loadingOrError(['organizations']) ||
                     <>
                       <form
                         className="panel inline-form"
@@ -947,7 +926,7 @@ function Workspace({ initialUser, onLogout, sharedLang, setSharedLang }) {
                     </>
                   )}
 
-                  {tab === 'activity' && (
+                  {tab === 'activity' && (loadingOrError(['notifications']) ||
                     <>
                       <div className="banner">{t('notificationsBanner')}</div>
                       {notifications.map((n) => (
@@ -1016,7 +995,7 @@ function Workspace({ initialUser, onLogout, sharedLang, setSharedLang }) {
               />
             )}
 
-            {modal.type === 'book' && (
+            {modal.type === 'book' && rentalAllowed && (
               <BookingForm
                 machine={modal.machine}
                 online={online}
@@ -1026,10 +1005,16 @@ function Workspace({ initialUser, onLogout, sharedLang, setSharedLang }) {
                   if (offline) {
                     saveDrafts([...drafts, d]);
                     setNotice(
-                      'Saved offline. No reservation exists until server acceptance.'
+                      t('unconfirmedDraft')
                     );
                   } else {
-                    await api('/bookings', d);
+                    try { await api('/bookings', d); }
+                    catch (err) {
+                      if (err.status && err.status < 500 && err.status !== 200) throw err;
+                      saveDrafts([...drafts.filter(x=>x.idempotency_key!==d.idempotency_key), d]);
+                      setNotice(t('unconfirmedDraft'));
+                      setModal(null); setTab('bookings'); return;
+                    }
                     await load();
                     setNotice('Booking requested. Awaiting owner approval.');
                   }
@@ -1096,6 +1081,7 @@ function Workspace({ initialUser, onLogout, sharedLang, setSharedLang }) {
                       });
                       setModal(null);
                       setNotice('Maintenance block saved.');
+                      await load();
                     });
                   }}
                 >

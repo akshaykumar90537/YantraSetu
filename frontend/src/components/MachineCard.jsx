@@ -125,9 +125,9 @@ export function MachineCard({ machine: m, index, onBook, lang = 'en' }) {
             <strong>{INR(m.rate)}</strong>
             <small> / {m.unit === 'hour' ? t('perHour') : t('perAcre')}</small>
           </span>
-          <button className="small-button" onClick={() => onBook(m)}>
+          {onBook && <button className="small-button" onClick={() => onBook(m)}>
             {t('viewAndBook')} <ArrowUpRight size={15} />
-          </button>
+          </button>}
         </div>
 
         <small className="charge-note">

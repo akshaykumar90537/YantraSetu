@@ -8,17 +8,13 @@ from fastapi import HTTPException
 
 def email_mode():
     mode = os.getenv('EMAIL_PROVIDER', 'disabled')
-    if mode == 'development' and os.getenv('APP_ENV', 'development') != 'development':
-        return 'disabled'
     if mode == 'smtp' and not all(os.getenv(k) for k in ('SMTP_HOST', 'SMTP_FROM')):
         return 'disabled'
-    return mode if mode in ('smtp', 'development') else 'disabled'
+    return 'smtp' if mode == 'smtp' else 'disabled'
 
 
 def send_email(address, code):
     mode = email_mode()
-    if mode == 'development':
-        return {'delivery': 'SIMULATED_NOT_SENT', 'development_code': code}
     if mode != 'smtp':
         raise HTTPException(503, 'Email sign-in is not configured. Contact the administrator.')
     msg = EmailMessage()
