@@ -139,6 +139,46 @@ def test_api_full_booking_billing_and_authorization(database, monkeypatch, mailb
     assert owner.post(f'/api/bookings/{booking}/rating',json={'score':4}).status_code==200
     assert stranger.post(f'/api/bookings/{booking}/payment-report',json={'status':'UNPAID'}).status_code==403
 
+def test_owner_listing_persists_and_farmer_discovers(database, monkeypatch, mailbox):
+    from contextlib import contextmanager
+    from psycopg.rows import dict_row
+    from fastapi.testclient import TestClient
+    from app import main
+    connect, *_ = database
+    @contextmanager
+    def isolated_db():
+        with connect() as c:
+            c.row_factory = dict_row
+            yield c
+    monkeypatch.setattr(main, 'db', isolated_db)
+    headers = {'X-Requested-With': 'YantraSetu'}
+    owner = TestClient(main.app, headers=headers)
+    farmer = TestClient(main.app, headers=headers)
+    owner_user = sign_in(owner, 'listing-owner@example.test', mailbox, name='Listing Owner', roles=['owner'])
+    sign_in(farmer, 'listing-farmer@example.test', mailbox, name='Listing Farmer', roles=['farmer'])
+    payload = {'name':'Persistence tractor', 'category':'Tractor', 'village':'Kharar',
+               'latitude':30.7441, 'longitude':76.6472, 'rate':'850.00', 'unit':'hour'}
+    assert farmer.post('/api/machines', json=payload).status_code == 403
+    created = owner.post('/api/machines', json=payload)
+    assert created.status_code == 200, created.text
+    ident = created.json()['id']
+    # A fresh database connection proves the create request committed its record.
+    with connect() as c:
+        row = c.execute('SELECT owner_id,name,rate FROM machines WHERE id=%s', (ident,)).fetchone()
+        assert str(row[0]) == owner_user['id']
+        assert row[1] == payload['name'] and float(row[2]) == 850
+    owner.post('/api/auth/logout', json={})
+    sign_in(owner, 'listing-owner@example.test', mailbox)
+    assert any(m['id'] == ident for m in owner.get('/api/fleet').json())
+    query = {'latitude':30.7441, 'longitude':76.6472, 'radius':5, 'category':'Tractor'}
+    found = farmer.get('/api/machines', params=query)
+    assert found.status_code == 200, found.text
+    assert any(m['id'] == ident and m['owner_id'] == owner_user['id'] for m in found.json())
+    assert not any(m['id'] == ident for m in farmer.get('/api/machines', params={**query, 'category':'Harvester'}).json())
+    assert not any(m['id'] == ident for m in farmer.get('/api/machines', params={**query, 'longitude':75}).json())
+    assert farmer.patch(f'/api/machines/{ident}/status', json={'is_active':False}).status_code == 403
+
+
 def test_otp_wrong_attempts_persist_and_lock(database, monkeypatch, mailbox):
     from contextlib import contextmanager
     from psycopg.rows import dict_row

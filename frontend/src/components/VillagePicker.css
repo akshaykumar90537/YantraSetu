@@ -1,0 +1,11 @@
+.village-picker { position: relative; min-width: 0; }
+.village-picker > label { display: block; margin-bottom: 8px; font-weight: 600; }
+.village-picker > input { width: 100%; box-sizing: border-box; min-height: 48px; padding: 12px 14px; border: 1px solid #b9cbbb; border-radius: 7px; background: #fff; color: #173f35; font: inherit; }
+.village-picker > input:focus { outline: 2px solid #7f9c46; outline-offset: 2px; }
+.village-picker-menu { position: absolute; top: 100%; left: 0; right: 0; z-index: 30; background: #fff; border: 1px solid #b9cbbb; border-radius: 8px; box-shadow: 0 8px 24px #173f3520; max-height: 300px; overflow-y: auto; }
+.village-picker-menu ul { list-style: none; margin: 0; padding: 4px; }
+.village-picker-menu li { display: flex; flex-direction: column; gap: 3px; padding: 10px 12px; border-radius: 5px; cursor: pointer; color: #173f35; }
+.village-picker-menu li:hover, .village-picker-menu li[aria-selected="true"] { background: #edf3e4; }
+.village-picker-menu li span { font-size: 12px; color: #637362; }
+.village-picker-menu p { padding: 12px; margin: 0; font-size: 13px; }
+.village-picker-hint { display: block; margin-top: 6px; font-size: 12px; color: #637362; }
