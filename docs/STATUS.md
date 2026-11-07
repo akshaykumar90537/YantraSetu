@@ -1,5 +1,9 @@
 # Development status — 30 October 2026
 
+## Booking contact update — 7 November 2026
+
+The booking form now requires an Indian mobile contact number and explains that it is shared with the equipment owner after acceptance. Migration 006 stores this number separately for each booking, without changing login identity or meter-code delivery. Only the machine owner can retrieve it for approved, in-progress or completed bookings; pending, rejected and cancelled bookings do not expose it. The owner booking card provides a telephone link and labels the number as farmer-provided, not SMS verified. Existing bookings and older API clients without contact details remain supported and display a missing-contact message. Apply migrations before running the updated API.
+
 ## Docker-free update
 
 Dockerfiles, Compose and the container-only nginx configuration have been removed. Local configuration loads automatically from the project-root `.env`. `dev.py` provides native checks, migrations, seed, tests and API startup. Windows setup uses explicit venv executable paths; no PowerShell policy change is required. CI now installs PostgreSQL/PostGIS natively; that workflow and Windows startup have not been executed here. The helper help/error paths and the existing local tests were rechecked.

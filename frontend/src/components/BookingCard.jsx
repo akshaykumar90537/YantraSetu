@@ -1,7 +1,28 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { CalendarDays, IndianRupee, Wrench, Fuel, Star, User, ShieldCheck } from 'lucide-react';
 import { api } from '../api';
 import { INR, dt, translate } from '../locales';
+
+function FarmerContact({ bookingId }) {
+  const [contact, setContact] = useState(null);
+  const [error, setError] = useState('');
+  const [retry, setRetry] = useState(0);
+  useEffect(() => {
+    let active = true;
+    setContact(null); setError('');
+    api(`/bookings/${bookingId}/farmer-contact`).then(result => {
+      if (active) setContact(result);
+    }).catch(() => { if (active) setError('Could not load farmer contact.'); });
+    return () => { active = false; };
+  }, [bookingId, retry]);
+  if (error) return <p role="alert">{error} <button type="button" onClick={() => setRetry(n => n + 1)}>Retry</button></p>;
+  if (!contact) return <p role="status">Loading farmer contact…</p>;
+  if (!contact.phone) return <p>No contact number was provided with this booking.</p>;
+  return <div style={{ marginTop: 10 }}>
+    <a href={`tel:${contact.phone}`} style={{ fontWeight: 700 }}>Call farmer: {contact.phone}</a>
+    <small style={{ display: 'block', marginTop: 4 }}>Provided by the farmer · not SMS verified. Use only to coordinate this rental.</small>
+  </div>;
+}
 
 export function BookingCard({ booking: b, user: u, busy, run, load, setModal, notify, lang = 'en' }) {
   if (!b) return null;
@@ -103,11 +124,6 @@ export function BookingCard({ booking: b, user: u, busy, run, load, setModal, no
               <span style={{ fontWeight: '700', fontSize: '13px', color: '#1e293b' }}>
                 {t('farmerLabel')}: {b.farmer_name || 'Farmer'}
               </span>
-              {b.farmer_phone && (
-                <span style={{ fontSize: '12px', color: '#64748b' }}>
-                  ({b.farmer_phone})
-                </span>
-              )}
             </div>
 
             {/* Farmer Overall Rating Badge */}
@@ -131,9 +147,10 @@ export function BookingCard({ booking: b, user: u, busy, run, load, setModal, no
             </div>
           </div>
 
+          {['APPROVED', 'IN_PROGRESS', 'COMPLETED'].includes(b.status) && <FarmerContact key={b.id} bookingId={b.id} />}
           {b.status === 'PENDING' && (
             <div style={{ fontSize: '12px', color: '#166534', marginTop: '6px', fontWeight: '600' }}>
-              ⭐ Check farmer rating above and approve to rent out equipment for this time slot.
+              Accept this request to reserve the equipment and view the farmer's contact number, if provided.
             </div>
           )}
           {['APPROVED', 'IN_PROGRESS'].includes(b.status) && (

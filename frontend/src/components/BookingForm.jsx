@@ -126,6 +126,7 @@ export function BookingForm({ machine: m, online, busy, run, onDone, lang = 'en'
       latitude: Number(farmLat),
       longitude: Number(farmLon),
       idempotency_key: idempotencyKey,
+      contact_phone: '+91' + String(f.get('contact_phone') || '').replace(/\D/g, '').replace(/^91(?=\d{10}$)/, ''),
       selected_attachments: selectedAttachments,
       fuel_included: fuelIncluded,
     };
@@ -169,6 +170,14 @@ export function BookingForm({ machine: m, online, busy, run, onDone, lang = 'en'
           run(async () => onDone(d, !online));
         }}
       >
+        <FormField label="Your mobile number (India)">
+          <input name="contact_phone" type="tel" inputMode="tel" autoComplete="tel-national"
+            placeholder="9876543210" pattern="(?:\+91)?[6-9][0-9]{9}" maxLength={13} required
+            aria-describedby="booking-contact-help" />
+        </FormField>
+        <p id="booking-contact-help" style={{ fontSize: 13 }}>
+          By sending this request, you agree to share this number with the equipment owner after they accept, so they can call you about this rental. This number is not verified by SMS.
+        </p>
         <div className="form-grid">
           <FormField label={t('startDeviceTime')}>
             <input

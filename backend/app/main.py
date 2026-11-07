@@ -633,6 +633,7 @@ class SelectedAttachment(BaseModel):
     rate:Decimal=Field(ge=0,le=50000,max_digits=12,decimal_places=2)
 
 class Booking(BaseModel):
+    contact_phone:str|None=Field(default=None,pattern=r'^\+91[6-9]\d{9}$')
     machine_id:UUID
     start_at:AwareDatetime
     end_at:AwareDatetime
@@ -701,6 +702,8 @@ def book(p:Booking,u=Depends(renter)):
         ident=uid()
         sel_att_json=Jsonb([att.model_dump(mode='json') for att in p.selected_attachments])
         row=one(c,'INSERT INTO bookings(id,machine_id,farmer_id,start_at,end_at,reserved_until,quantity,latitude,longitude,rate,unit,mobilization,estimate,idempotency_key,request_hash,selected_attachments,fuel_included,fuel_extra) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *',(ident,p.machine_id,u['id'],p.start_at,p.end_at,reserved_until,quantity,p.latitude,p.longitude,m['rate'],m['unit'],m['mobilization'],b['total'],p.idempotency_key,req_hash,sel_att_json,p.fuel_included,fuel_extra))
+        if p.contact_phone:
+            c.execute('INSERT INTO booking_contacts(booking_id,phone) VALUES(%s,%s)',(ident,p.contact_phone))
         audit(c,u['id'],ident,'BOOKING_REQUESTED')
         notify(c,m['owner_id'],f'New booking request {ident}')
         notify(c,u['id'],f'Booking {ident} awaits owner approval')
@@ -715,7 +718,7 @@ m.category AS machine_category,
 m.owner_id,
 m.village,
 u.name AS farmer_name,
-u.phone AS farmer_phone,
+NULL::text AS farmer_phone,
 ow.name AS owner_name,
 ow.phone AS owner_phone,
 COALESCE((SELECT ROUND(AVG(r.score)::numeric, 1) FROM ratings r WHERE r.target_id=b.farmer_id), 5.0) AS farmer_rating_avg,
@@ -736,6 +739,16 @@ def bookings(u=Depends(user)):
     with db() as c: return many(c,BOOKING_SELECT+' WHERE b.farmer_id=%s OR m.owner_id=%s OR b.operator_id=%s ORDER BY b.created_at DESC',(u['id'],)*3)
 class Action(BaseModel):
     action:Literal['approve','reject','cancel']
+
+@app.get('/api/bookings/{ident}/farmer-contact')
+def farmer_contact(ident:UUID,u=Depends(user)):
+    with db() as c:
+        b=booking_access(c,ident,u)
+        require(u['id']==b['owner_id'],'Only the equipment owner can view this contact.',403)
+        require(b['status'] in ('APPROVED','IN_PROGRESS','COMPLETED'),'Farmer contact is available after acceptance.',403)
+        saved=one(c,'SELECT phone FROM booking_contacts WHERE booking_id=%s',(ident,))
+        return {'name':b['farmer_name'],'phone':saved['phone'] if saved else None,'verified':False}
+
 @app.post('/api/bookings/{ident}/action')
 def action(ident:UUID,p:Action,u=Depends(user)):
     with db() as c:

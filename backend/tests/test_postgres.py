@@ -114,14 +114,30 @@ def test_api_full_booking_billing_and_authorization(database, monkeypatch, mailb
     machine=r.json()['id']
     now=datetime.now(timezone.utc)
     body={'machine_id':machine,'start_at':(now+timedelta(minutes=1)).isoformat(),'end_at':(now+timedelta(hours=2)).isoformat(),'latitude':30,'longitude':75,'idempotency_key':str(uuid4())}
+    body['contact_phone'] = '+919876543210'
+    invalid = farmer.post('/api/bookings',json={**body,'contact_phone':'123'})
+    assert invalid.status_code == 422
     r=farmer.post('/api/bookings',json=body);assert r.status_code==200,r.text
     booking=r.json()['id']
+    assert 'contact_phone' not in r.json()
+    with connect() as c:
+        assert c.execute('SELECT phone FROM booking_contacts WHERE booking_id=%s',(booking,)).fetchone()[0] == body['contact_phone']
+    assert owner.get(f'/api/bookings/{booking}/farmer-contact').status_code == 403
+    assert stranger.get(f'/api/bookings/{booking}/farmer-contact').status_code == 403
+    assert body['contact_phone'] not in owner.get('/api/bookings').text
     assert farmer.post('/api/bookings',json=body).json()['id']==booking
     changed={**body,'longitude':76}
     assert farmer.post('/api/bookings',json=changed).status_code==409
     assert stranger.get(f'/api/bookings/{booking}/audit').status_code==403
     assert farmer.post(f'/api/bookings/{booking}/action',json={'action':'approve'}).status_code==403
     assert owner.post(f'/api/bookings/{booking}/action',json={'action':'approve'}).status_code==200
+    contact = owner.get(f'/api/bookings/{booking}/farmer-contact')
+    assert contact.status_code == 200, contact.text
+    assert contact.json()['phone'] == body['contact_phone']
+    assert contact.json()['verified'] is False
+    assert stranger.get(f'/api/bookings/{booking}/farmer-contact').status_code == 403
+    assert farmer.get(f'/api/bookings/{booking}/farmer-contact').status_code == 403
+    assert body['contact_phone'] not in stranger.get('/api/bookings').text
     # Move only this isolated test record into its start window, avoiding a timed sleep.
     with isolated_db() as c:c.execute('UPDATE bookings SET start_at=now()-interval \'1 minute\' WHERE id=%s',(booking,))
     for stage,reading in [('start','100.000'),('end','102.500')]:
