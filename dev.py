@@ -11,7 +11,7 @@ ROOT=Path(__file__).resolve().parent
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('command',choices=['check','init','seed','serve','test'])
+    parser.add_argument('command',choices=['check','init','seed','serve','test','maintenance'])
     args=parser.parse_args()
     try:
         from dotenv import load_dotenv
@@ -41,6 +41,7 @@ def main():
         'seed':['-m','app.seed'],
         'serve':['-m','uvicorn','app.main:app','--reload','--host','127.0.0.1','--port','8000'],
         'test':['-m','pytest','-q'],
+        'maintenance':['-m','app.maintenance'],
     }
     try:
         return subprocess.run([sys.executable,*commands[args.command]],cwd=ROOT/'backend',check=False).returncode

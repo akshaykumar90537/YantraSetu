@@ -1,6 +1,9 @@
+import { localizeOperations } from '../locales/operations';
 import React, { useState, useEffect, useRef } from 'react';
 import { Plus, Check, Wrench, Fuel, X, MapPin, Navigation, Loader2, ChevronDown } from 'lucide-react';
 import { FormField } from './Common';
+import { MapPicker } from './MapPicker';
+import { EquipmentPhotos } from './EquipmentPhotos';
 import { INR, translate } from '../locales';
 import { searchLocalVillages, searchOnlineVillages, findNearestVillage } from '../data/villages';
 
@@ -20,6 +23,13 @@ export function MachineForm({ orgs = [], busy, onSubmit, initialData = null, lan
   const isEdit = Boolean(initialData);
 
   const [name, setName] = useState(initialData?.name || '');
+  const [photos, setPhotos] = useState(null);
+  const [photoPreviews,setPhotoPreviews]=useState([]);
+  const [photoError, setPhotoError] = useState('');
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const [condition, setCondition] = useState(initialData?.condition || 'Not specified');
+  const [horsepower, setHorsepower] = useState(initialData?.horsepower ?? '');
+  const [transportAvailable, setTransportAvailable] = useState(initialData?.transport_available || false);
   const [model, setModel] = useState(initialData?.model || '');
   const [category, setCategory] = useState(initialData?.category || 'Tractor');
   const [village, setVillage] = useState(initialData?.village || '');
@@ -27,8 +37,10 @@ export function MachineForm({ orgs = [], busy, onSubmit, initialData = null, lan
   const [unit, setUnit] = useState(initialData?.unit || 'hour');
   const [mobilization, setMobilization] = useState(initialData?.mobilization ?? 0);
   const [buffer, setBuffer] = useState(initialData?.buffer_minutes ?? 15);
-  const [latitude, setLatitude] = useState(initialData?.latitude ?? 30.901);
-  const [longitude, setLongitude] = useState(initialData?.longitude ?? 75.857);
+  const [latitude, setLatitude] = useState(initialData?.latitude ?? '');
+  const [longitude, setLongitude] = useState(initialData?.longitude ?? '');
+  const [locationConfirmed, setLocationConfirmed] = useState(false);
+  const locationRevision = useRef(0);
   const [description, setDescription] = useState(initialData?.description || '');
   const [orgId, setOrgId] = useState(initialData?.organization_id || '');
   const [isGeocoding, setIsGeocoding] = useState(false);
@@ -48,7 +60,6 @@ export function MachineForm({ orgs = [], busy, onSubmit, initialData = null, lan
   const [villageSuggestions, setVillageSuggestions] = useState([]);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [highlightedIndex, setHighlightedIndex] = useState(-1);
-  const [isSearchingOnline, setIsSearchingOnline] = useState(false);
   const villageRef = useRef(null);
 
   // Close dropdown on click outside
@@ -67,39 +78,19 @@ export function MachineForm({ orgs = [], busy, onSubmit, initialData = null, lan
     const local = searchLocalVillages(village, 8);
     setVillageSuggestions(local);
 
-    if (!village || village.trim().length < 2) {
-      return;
-    }
-
-    const timer = setTimeout(async () => {
-      setIsSearchingOnline(true);
-      try {
-        const online = await searchOnlineVillages(village, 6);
-        if (online && online.length > 0) {
-          setVillageSuggestions((prev) => {
-            const seen = new Set(prev.map((p) => p.name.toLowerCase()));
-            const filteredOnline = online.filter((o) => !seen.has(o.name.toLowerCase()));
-            return [...prev, ...filteredOnline].slice(0, 10);
-          });
-        }
-      } catch {
-        // Local database continues working
-      } finally {
-        setIsSearchingOnline(false);
-      }
-    }, 350);
-
-    return () => clearTimeout(timer);
+    // Online lookup is explicit; typing only searches the bundled location list.
   }, [village]);
 
   function selectVillage(item) {
+    locationRevision.current += 1;
+    setLocationConfirmed(false);
     const formatted = item.label || `${item.name}, ${item.district}, ${item.state}`;
     setVillage(formatted);
     const lat = Number(Number(item.lat).toFixed(5));
     const lon = Number(Number(item.lon).toFixed(5));
     setLatitude(lat);
     setLongitude(lon);
-    setGeoNotice(`📍 Exact GPS pinned: ${lat}, ${lon} (${item.name})`);
+    setGeoNotice(`Village centre selected: ${lat}, ${lon}. Adjust to the equipment location if needed, then confirm below.`);
     setIsDropdownOpen(false);
     setHighlightedIndex(-1);
   }
@@ -107,13 +98,16 @@ export function MachineForm({ orgs = [], busy, onSubmit, initialData = null, lan
   async function lookupCoordinates(nameToLookup) {
     const query = (nameToLookup || village).trim();
     if (!query) return;
+    const revision = ++locationRevision.current;
     setIsGeocoding(true);
     setGeoNotice('');
 
     // 1. Check verified local agricultural villages first
     const local = searchLocalVillages(query, 5);
     if (local && local.length > 0) {
-      selectVillage(local[0]);
+      setVillageSuggestions(local);
+      setIsDropdownOpen(true);
+      setGeoNotice('Select the correct village from the suggestions.');
       setIsGeocoding(false);
       return;
     }
@@ -121,8 +115,11 @@ export function MachineForm({ orgs = [], busy, onSubmit, initialData = null, lan
     // 2. Query OpenStreetMap Nominatim for Indian locations
     try {
       const online = await searchOnlineVillages(query, 3);
+      if (revision !== locationRevision.current) return;
       if (online && online.length > 0) {
-        selectVillage(online[0]);
+        setVillageSuggestions(online);
+        setIsDropdownOpen(true);
+        setGeoNotice('Select the correct location from the results.');
       } else {
         setGeoNotice(`Could not auto-locate "${query}". Please pick from the dropdown list or use "Use My Current GPS".`);
         setIsDropdownOpen(true);
@@ -140,8 +137,11 @@ export function MachineForm({ orgs = [], busy, onSubmit, initialData = null, lan
       return;
     }
     setIsGeocoding(true);
+    const revision = ++locationRevision.current;
     navigator.geolocation.getCurrentPosition(
       (pos) => {
+        if (revision !== locationRevision.current) { setIsGeocoding(false); return; }
+        setLocationConfirmed(false);
         const lat = Number(pos.coords.latitude.toFixed(5));
         const lon = Number(pos.coords.longitude.toFixed(5));
         setLatitude(lat);
@@ -153,7 +153,7 @@ export function MachineForm({ orgs = [], busy, onSubmit, initialData = null, lan
           if (!village.trim()) {
             setVillage(nearest.label);
           }
-          setGeoNotice(`📍 Device GPS set: ${lat}, ${lon} (~${nearest.distanceKm} km from ${nearest.name})`);
+          setGeoNotice(`Device location: ${lat}, ${lon} (accuracy about ${Math.round(pos.coords.accuracy)} m). Confirm this is where the equipment is kept.`);
         } else {
           setGeoNotice(`📍 Device GPS set: ${lat}, ${lon}`);
         }
@@ -183,7 +183,8 @@ export function MachineForm({ orgs = [], busy, onSubmit, initialData = null, lan
   const bufferError = Number(buffer) < 0 ? 'Buffer cannot be negative.' : '';
   const mobError = Number(mobilization) < 0 ? 'Mobilization fee cannot be negative.' : '';
 
-  const isValid = !nameError && !modelError && !villageError && !rateError && !bufferError && !mobError;
+  const coordinatesValid = latitude !== '' && longitude !== '' && Number.isFinite(Number(latitude)) && Number.isFinite(Number(longitude)) && Math.abs(Number(latitude)) <= 90 && Math.abs(Number(longitude)) <= 180;
+  const isValid = !nameError && !modelError && !villageError && !rateError && !bufferError && !mobError && coordinatesValid && locationConfirmed && !isGeocoding;
 
   function addPresetAttachment(preset) {
     if (attachments.some((a) => a.name.toLowerCase() === preset.name.toLowerCase())) return;
@@ -210,15 +211,17 @@ export function MachineForm({ orgs = [], busy, onSubmit, initialData = null, lan
     setAttachments(updated);
   }
 
-  return (
+  return localizeOperations(
     <>
       <h2>{isEdit ? 'Update machine listing' : t('putMachineToWork')}</h2>
       <p>{t('newListingNote')}</p>
       <form
         onSubmit={(e) => {
           e.preventDefault();
-          if (!isValid) return;
+          if (!isValid || photoBusy || photoError) return;
           onSubmit({
+            condition, horsepower: horsepower === '' ? null : Number(horsepower), transport_available: transportAvailable,
+            ...(photos !== null ? { photos } : {}),
             name: name.trim(),
             category,
             model: model.trim(),
@@ -286,6 +289,9 @@ export function MachineForm({ orgs = [], busy, onSubmit, initialData = null, lan
                   value={village}
                   autoComplete="off"
                   onChange={(e) => {
+                    locationRevision.current += 1;
+                    setLocationConfirmed(false);
+                    setLatitude(''); setLongitude(''); setGeoNotice('');
                     setVillage(e.target.value);
                     setIsDropdownOpen(true);
                     setHighlightedIndex(-1);
@@ -319,6 +325,9 @@ export function MachineForm({ orgs = [], busy, onSubmit, initialData = null, lan
                     <button
                       type="button"
                       onClick={() => {
+                        locationRevision.current += 1;
+                        setLocationConfirmed(false);
+                        setLatitude(''); setLongitude('');
                         setVillage('');
                         setIsDropdownOpen(true);
                         setGeoNotice('');
@@ -375,7 +384,7 @@ export function MachineForm({ orgs = [], busy, onSubmit, initialData = null, lan
                         ? `Matching Locations (${villageSuggestions.length})`
                         : 'Select or Search Village / Mandi'}
                     </span>
-                    {isSearchingOnline && (
+                    {isGeocoding && (
                       <span style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#16a34a', fontSize: '10px' }}>
                         <Loader2 size={10} className="spin" /> Searching...
                       </span>
@@ -384,7 +393,7 @@ export function MachineForm({ orgs = [], busy, onSubmit, initialData = null, lan
 
                   {villageSuggestions.length === 0 ? (
                     <div style={{ padding: '12px', textAlign: 'center', fontSize: '12px', color: '#64748b' }}>
-                      {isSearchingOnline ? 'Searching location databases...' : 'No matching villages found. Try typing district or nearby town.'}
+                      {isGeocoding ? 'Searching location databases...' : 'No matching villages found. Try typing district or nearby town.'}
                     </div>
                   ) : (
                     villageSuggestions.map((item, idx) => {
@@ -462,7 +471,7 @@ export function MachineForm({ orgs = [], busy, onSubmit, initialData = null, lan
                 onClick={() => lookupCoordinates(village)}
               >
                 {isGeocoding ? <Loader2 size={12} className="spin" /> : <MapPin size={12} />}
-                {isGeocoding ? 'Detecting...' : 'Detect GPS from Village'}
+                {isGeocoding ? 'Searching...' : 'Find location suggestions'}
               </button>
               <button
                 type="button"
@@ -483,6 +492,24 @@ export function MachineForm({ orgs = [], busy, onSubmit, initialData = null, lan
           </FormField>
         </div>
 
+        <fieldset><legend>Equipment photos and condition</legend>
+          <p>Upload up to 3 actual equipment photos, each under 1 MB. JPEG, PNG or WebP. Photos are public; avoid people, documents and phone numbers.</p>
+          {initialData && photos === null && <EquipmentPhotos lang={lang} machine={initialData} />}
+          <FormField label="Equipment photos"><input type="file" accept="image/jpeg,image/png,image/webp" multiple disabled={photoBusy || busy} onChange={async e => {
+            const files=Array.from(e.target.files || []); setPhotoError('');
+            if(files.length>3 || files.some(f=>f.size>1000000 || !['image/jpeg','image/png','image/webp'].includes(f.type))) {setPhotoError('Select up to 3 JPEG, PNG or WebP files under 1 MB each.'); e.target.value=''; return;}
+            if(!files.length) return;
+            setPhotoBusy(true);
+            try {const previews=await Promise.all(files.map(f=>new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(String(r.result));r.onerror=reject;r.readAsDataURL(f);})));setPhotoPreviews(previews);setPhotos(previews.map(p=>p.split(',')[1]));} catch {setPhotoError('Could not read the selected photos.');} finally {setPhotoBusy(false);}
+          }} /></FormField>
+          {photoPreviews.map((p,i)=><img key={i} src={p} alt={`Selected equipment photo ${i+1}`} style={{width:100,height:80,objectFit:'cover',margin:4}} />)}
+          <button type="button" className="text-button" disabled={photoBusy} onClick={()=>{setPhotos([]);setPhotoPreviews([]);setPhotoError('');}}>Remove photos on save</button>
+          {photoError && <p role="alert">{photoError}</p>}
+          <FormField label="Equipment condition"><select value={condition} onChange={e=>setCondition(e.target.value)}>{['Not specified','Excellent','Good','Needs service'].map(v=><option key={v}>{v}</option>)}</select></FormField>
+          <FormField label="Horsepower (optional)"><input type="number" min={1} max={1000} value={horsepower} onChange={e=>setHorsepower(e.target.value)} /></FormField>
+          <label className="checkbox"><input type="checkbox" checked={transportAvailable} onChange={e=>setTransportAvailable(e.target.checked)} />Transport can be arranged by the owner</label>
+          <small>Condition and transport information are owner-provided. Use the mobilization field for transport charges.</small>
+        </fieldset>
         <FormField label={t('specsLabel')}>
           <textarea
             name="description"
@@ -546,7 +573,7 @@ export function MachineForm({ orgs = [], busy, onSubmit, initialData = null, lan
               max="90"
               step="any"
               value={latitude}
-              onChange={(e) => setLatitude(e.target.value)}
+              onChange={(e) => { locationRevision.current += 1; setLatitude(e.target.value); setLocationConfirmed(false); }}
               required
             />
           </FormField>
@@ -558,11 +585,28 @@ export function MachineForm({ orgs = [], busy, onSubmit, initialData = null, lan
               max="180"
               step="any"
               value={longitude}
-              onChange={(e) => setLongitude(e.target.value)}
+              onChange={(e) => { locationRevision.current += 1; setLongitude(e.target.value); setLocationConfirmed(false); }}
               required
             />
           </FormField>
         </div>
+
+        {coordinatesValid && <section aria-label="Equipment location map" style={{ marginBottom: 16 }}>
+          <h3>Where is the equipment kept?</h3>
+          <p>Click the map or drag the pin to the equipment location. The village suggestion starts at the village centre. You can also edit the coordinates above if the map cannot load.</p>
+          <MapPicker center={[Number(latitude), Number(longitude)]} radius={0} height="280px" showLocate={false} lang={lang}
+            onSelectLocation={(lat, lon) => {
+              locationRevision.current += 1;
+              setLatitude(lat); setLongitude(lon); setLocationConfirmed(false);
+              setGeoNotice('Map location updated. Confirm this is where the equipment is kept.');
+            }} />
+        </section>}
+        <label className="checkbox" style={{ marginBottom: 16 }}>
+          <input type="checkbox" checked={locationConfirmed} disabled={!coordinatesValid || !village.trim() || isGeocoding}
+            onChange={e => setLocationConfirmed(e.target.checked)} />
+          I confirm the village and coordinates mark where this equipment is kept.
+        </label>
+        {!locationConfirmed && <p role="status">Select a village or use GPS, check the coordinates, and confirm the equipment location before saving.</p>}
 
         {/* Implement Attachments Configuration */}
         <div style={{
@@ -720,7 +764,7 @@ export function MachineForm({ orgs = [], busy, onSubmit, initialData = null, lan
         </div>
 
         <FormField label={t('orgOptional')}>
-          <select name="organization" defaultValue={initialData?.organization_id || ''}>
+          <select name="organization" value={orgId} onChange={e => setOrgId(e.target.value)}>
             <option value="">{t('independentOwner')}</option>
             {orgs.map((o) => (
               <option key={o.id} value={o.id}>
@@ -730,11 +774,11 @@ export function MachineForm({ orgs = [], busy, onSubmit, initialData = null, lan
           </select>
         </FormField>
 
-        <button className="primary full" disabled={busy || !isValid}>
+        <button className="primary full" disabled={busy || photoBusy || !isValid || !!photoError}>
           {isEdit ? 'Save Changes' : t('publishListingBtn')}{' '}
           {isEdit ? <Check size={17} /> : <Plus size={17} />}
         </button>
       </form>
     </>
-  );
+  ,lang);
 }

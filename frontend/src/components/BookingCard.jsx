@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { CalendarDays, IndianRupee, Wrench, Fuel, Star, User, ShieldCheck } from 'lucide-react';
+import { BookingTools } from './BookingTools';
 import { api } from '../api';
 import { INR, dt, translate } from '../locales';
 
@@ -25,6 +26,7 @@ function FarmerContact({ bookingId }) {
 }
 
 export function BookingCard({ booking: b, user: u, busy, run, load, setModal, notify, lang = 'en' }) {
+  const [reason,setReason]=useState('');
   if (!b) return null;
   const t = (k, p) => translate(lang, k, p);
   const owner = Boolean(u && b && u.id === b.owner_id);
@@ -32,7 +34,7 @@ export function BookingCard({ booking: b, user: u, busy, run, load, setModal, no
 
   const action = (a) =>
     run(async () => {
-      await api('/bookings/' + b.id + '/action', { action: a });
+      await api('/bookings/' + b.id + '/action', { action: a, reason });
       await load();
     });
 
@@ -55,6 +57,8 @@ export function BookingCard({ booking: b, user: u, busy, run, load, setModal, no
         <span className={'status ' + statusRaw.toLowerCase()}>{statusLabel}</span>
       </div>
 
+      <BookingTools lang={lang} booking={b} user={u} load={load} setModal={setModal} run={run}/>
+      {['PENDING','APPROVED'].includes(b.status)&&<label>Reason if rejecting or cancelling (optional)<input value={reason} maxLength={500} onChange={e=>setReason(e.target.value)}/></label>}
       <div className="booking-meta">
         <span>
           <CalendarDays size={16} />
@@ -140,7 +144,7 @@ export function BookingCard({ booking: b, user: u, busy, run, load, setModal, no
               color: '#92400e',
             }}>
               <Star size={13} fill="#f59e0b" color="#d97706" />
-              <span>{Number(b.farmer_rating_avg || 5.0).toFixed(1)}</span>
+              <span>{Number(b.farmer_rating_count)>0?Number(b.farmer_rating_avg).toFixed(1):'No ratings yet'}</span>
               <span style={{ fontSize: '11px', color: '#b45309', fontWeight: '500' }}>
                 ({b.farmer_rating_count || 0} reviews)
               </span>
@@ -196,7 +200,7 @@ export function BookingCard({ booking: b, user: u, busy, run, load, setModal, no
             color: '#92400e',
           }}>
             <Star size={13} fill="#f59e0b" color="#d97706" />
-            <span>{Number(b.owner_rating_avg || 5.0).toFixed(1)}</span>
+            <span>{Number(b.owner_rating_count)>0?Number(b.owner_rating_avg).toFixed(1):'No ratings yet'}</span>
             <span style={{ fontSize: '11px', color: '#b45309', fontWeight: '500' }}>
               ({b.owner_rating_count || 0} reviews)
             </span>

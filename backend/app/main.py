@@ -28,6 +28,8 @@ from app.domain import can_rent, bill, meter_quantity, find_next_available_slot,
 from app.sms import provider
 from app.email_auth import email_mode, send_email, verify_google
 from app.passwords import hash_password, check_password, DUMMY_HASH
+from app.photos import save_photos
+from app.booking_operations import expire_pending, reminders
 
 app=FastAPI(title='YantraSetu',version='0.1.0')
 _origins_raw=os.getenv('FRONTEND_ORIGIN','http://localhost:5173')
@@ -68,13 +70,10 @@ DEMO_SESSIONS = {}
 def is_origin_allowed(origin: str | None) -> bool:
     if not origin: return True
     if origin in ALLOWED_ORIGINS: return True
-    if origin.endswith('.vercel.app'): return True
-    if origin.startswith('http://localhost:') or origin.startswith('http://127.0.0.1:'): return True
     return False
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origin_regex=r"https://.*\.vercel\.app|http://localhost:\d+|http://127\.0\.0\.1:\d+",
     allow_origins=list(ALLOWED_ORIGINS),
     allow_credentials=True,
     allow_methods=['GET','POST','PATCH','DELETE','OPTIONS'],
@@ -94,7 +93,15 @@ async def safety_headers(request,call_next):
             return Response('Invalid request header',403)
         if req_origin and not is_origin_allowed(req_origin):
             return Response('Invalid request origin',403)
-    response=await call_next(request)
+    request_id=uid()
+    try:
+        response=await call_next(request)
+    except Exception as exc:
+        import logging
+        from fastapi.responses import JSONResponse
+        logging.getLogger('yantrasetu').error('request_failed id=%s type=%s',request_id,type(exc).__name__)
+        response=JSONResponse(status_code=500,content={'detail':'Request failed. Please retry or share this reference with support: '+request_id})
+    response.headers['X-Request-ID']=request_id
     response.headers['X-Content-Type-Options']='nosniff'
     response.headers['Cache-Control']='no-store'
     response.headers['Referrer-Policy']='same-origin'
@@ -114,7 +121,7 @@ def user(request:Request):
     require(bool(token),'Sign in first',401)
     try:
         with db() as c:
-            u=one(c,'SELECT u.* FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=%s AND s.expires_at>now()',(digest(token),))
+            u=one(c,'SELECT u.* FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=%s AND s.expires_at>now() AND NOT u.suspended',(digest(token),))
         require(u is not None,'Sign in first',401)
         return u
     except HTTPException:
@@ -132,7 +139,7 @@ def optional_user(request:Request):
     if not token: return None
     try:
         with db() as c:
-            return one(c,'SELECT u.* FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=%s AND s.expires_at>now()',(digest(token),))
+            return one(c,'SELECT u.* FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=%s AND s.expires_at>now() AND NOT u.suspended',(digest(token),))
     except Exception:
         u_id = DEMO_SESSIONS.get(digest(token))
         if u_id:
@@ -204,6 +211,7 @@ class LoginVerify(Verify):
     email:str|None=None
 
 def establish_session(c,u,response):
+    require(not u.get('suspended',False),'Account restricted. Contact support.',403)
     token=secrets.token_urlsafe(32)
     c.execute("INSERT INTO sessions VALUES(%s,%s,now()+interval '24 hours')",(digest(token),u['id']))
     samesite_val = 'none' if not DEV else 'lax'
@@ -330,7 +338,7 @@ def health():
     try:
         with db() as c: one(c,'SELECT 1')
     except Exception:
-        db_status = 'disconnected_demo_mode'
+        raise HTTPException(503,'Database unavailable')
     return {'status':'ok','database':db_status,'sms':'SIMULATED_NOT_SENT','payments':'outside_platform_only','version':'0.1.0'}
 @app.post('/api/auth/request')
 def login(p:Login,request:Request):
@@ -359,6 +367,10 @@ class Attachment(BaseModel):
     rate:Decimal=Field(ge=0,le=50000,max_digits=12,decimal_places=2)
 
 class Machine(BaseModel):
+    condition:Literal['Not specified','Excellent','Good','Needs service']='Not specified'
+    horsepower:int|None=Field(default=None,ge=1,le=1000)
+    transport_available:bool=False
+    photos:list[str]|None=Field(default=None,max_length=3)
     name:str=Field(min_length=3,max_length=100)
     category:str=Field(min_length=2,max_length=50)
     model:str=Field(default='Standard',min_length=2,max_length=100)
@@ -401,7 +413,9 @@ class Machine(BaseModel):
         if v < 0: raise ValueError('Amount cannot be negative')
         return v
 
-MACHINE_SELECT='''SELECT m.id,m.owner_id,m.organization_id,m.name,m.category,COALESCE(m.model, 'Standard') AS model,m.description,m.village,m.rate,m.unit,m.mobilization,m.buffer_minutes,m.active,COALESCE(m.is_active, m.active) AS is_active,COALESCE(m.attachments, '[]'::jsonb) AS attachments,COALESCE(m.fuel_included, false) AS fuel_included,COALESCE(m.fuel_rate_extra, 0) AS fuel_rate_extra,u.name AS owner_name,u.phone AS owner_phone,ST_Y(m.location::geometry) AS latitude,ST_X(m.location::geometry) AS longitude,
+MACHINE_SELECT='''SELECT m.id,m.moderated,m.owner_id,m.organization_id,m.name,m.category,COALESCE(m.model, 'Standard') AS model,m.description,m.village,m.rate,m.unit,m.mobilization,m.buffer_minutes,m.active,COALESCE(m.is_active, m.active) AS is_active,COALESCE(m.attachments, '[]'::jsonb) AS attachments,COALESCE(m.fuel_included, false) AS fuel_included,COALESCE(m.fuel_rate_extra, 0) AS fuel_rate_extra,u.name AS owner_name,u.phone AS owner_phone,ST_Y(m.location::geometry) AS latitude,ST_X(m.location::geometry) AS longitude,
+m.condition,m.horsepower,m.transport_available,
+ARRAY(SELECT p.id FROM machine_photos p WHERE p.machine_id=m.id ORDER BY p.position) AS photo_ids,
 COALESCE((SELECT ROUND(AVG(r.score)::numeric, 1) FROM ratings r JOIN bookings b ON b.id=r.booking_id WHERE b.machine_id=m.id AND r.target_id=m.owner_id), 0) AS rating_avg,
 COALESCE((SELECT COUNT(*) FROM ratings r JOIN bookings b ON b.id=r.booking_id WHERE b.machine_id=m.id AND r.target_id=m.owner_id), 0) AS rating_count,
 COALESCE((SELECT array_agg(DISTINCT badge) FROM ratings r JOIN bookings b ON b.id=r.booking_id, unnest(r.badges) AS badge WHERE b.machine_id=m.id AND r.target_id=m.owner_id), ARRAY[]::text[]) AS badges
@@ -415,9 +429,15 @@ def create_machine(p:Machine,u=Depends(user)):
         ident=uid()
         att_json=Jsonb([a.model_dump(mode='json') for a in p.attachments])
         c.execute('INSERT INTO machines(id,owner_id,organization_id,name,category,model,description,village,location,rate,unit,mobilization,buffer_minutes,attachments,fuel_included,fuel_rate_extra,active,is_active) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,ST_SetSRID(ST_MakePoint(%s,%s),4326)::geography,%s,%s,%s,%s,%s,%s,%s,true,true)',(ident,u['id'],p.organization_id,p.name,p.category,p.model,p.description,p.village,p.longitude,p.latitude,p.rate,p.unit,p.mobilization,p.buffer_minutes,att_json,p.fuel_included,p.fuel_rate_extra))
+        c.execute('UPDATE machines SET condition=%s,horsepower=%s,transport_available=%s WHERE id=%s',(p.condition,p.horsepower,p.transport_available,ident))
+        save_photos(c,ident,p.photos)
         return one(c,MACHINE_SELECT+' WHERE m.id=%s',(ident,))
 
 class MachineUpdate(BaseModel):
+    condition:Literal['Not specified','Excellent','Good','Needs service']|None=None
+    horsepower:int|None=Field(default=None,ge=1,le=1000)
+    transport_available:bool|None=None
+    photos:list[str]|None=Field(default=None,max_length=3)
     name:str|None=Field(default=None,min_length=3,max_length=100)
     category:str|None=Field(default=None,min_length=2,max_length=50)
     model:str|None=Field(default=None,min_length=2,max_length=100)
@@ -466,7 +486,7 @@ def update_machine(ident:UUID,p:MachineUpdate,u=Depends(user)):
         if p.organization_id is not None:
             require(one(c,'SELECT id FROM organizations WHERE id=%s AND manager_id=%s',(p.organization_id,u['id'])) is not None)
         updates,args=[],[]
-        fields=['name','category','model','description','village','rate','unit','mobilization','buffer_minutes','active','is_active','organization_id','fuel_included','fuel_rate_extra']
+        fields=['name','category','model','description','village','rate','unit','mobilization','buffer_minutes','active','is_active','organization_id','fuel_included','fuel_rate_extra','condition','horsepower','transport_available']
         if p.attachments is not None:
             updates.append('attachments=%s')
             args.append(Jsonb([a.model_dump(mode='json') for a in p.attachments]))
@@ -487,7 +507,19 @@ def update_machine(ident:UUID,p:MachineUpdate,u=Depends(user)):
         if updates:
             args.append(ident)
             c.execute(f"UPDATE machines SET {','.join(updates)} WHERE id=%s",args)
+        if 'horsepower' in p.model_fields_set and p.horsepower is None:
+            c.execute('UPDATE machines SET horsepower=NULL WHERE id=%s',(ident,))
+        if 'organization_id' in p.model_fields_set and p.organization_id is None:
+            c.execute('UPDATE machines SET organization_id=NULL WHERE id=%s',(ident,))
+        save_photos(c,ident,p.photos)
         return one(c,MACHINE_SELECT+' WHERE m.id=%s',(ident,))
+
+@app.get('/api/photos/{ident}')
+def machine_photo(ident:UUID,u=Depends(optional_user)):
+    with db() as c:
+        row=one(c,'SELECT p.image,m.active,m.is_active,m.moderated,m.owner_id FROM machine_photos p JOIN machines m ON m.id=p.machine_id WHERE p.id=%s',(ident,))
+        require(row and ((row['active'] and row['is_active'] and not row['moderated']) or (u and row['owner_id']==u['id'])),'Photo not found',404)
+        return Response(bytes(row['image']),media_type='image/jpeg',headers={'Content-Disposition':'inline'})
 DEMO_MACHINES = [
     {
         'id': '10000000-0000-4000-8000-000000000001',
@@ -582,12 +614,13 @@ DEMO_MACHINES = [
 def machines(latitude:float=30.901,longitude:float=75.857,radius:int=5,category:str='',u=Depends(optional_user)):
     require(-90<=latitude<=90 and -180<=longitude<=180 and 1<=radius<=50,'Invalid search radius or location',422)
     with db() as c:
+        expire_pending(c)
         owner_filter = " AND m.owner_id != %s" if u else ""
         params = [category, category, longitude, latitude, radius*1000]
         if u:
             params.append(u['id'])
         params.extend([longitude, latitude])
-        return many(c,MACHINE_SELECT+f''' WHERE m.active AND COALESCE(m.is_active, true) AND (%s='' OR m.category=%s) AND ST_DWithin(m.location,ST_SetSRID(ST_MakePoint(%s,%s),4326)::geography,%s){owner_filter} ORDER BY ST_Distance(m.location,ST_SetSRID(ST_MakePoint(%s,%s),4326)::geography) LIMIT 100''',tuple(params))
+        return many(c,MACHINE_SELECT+f''' WHERE m.active AND NOT m.moderated AND NOT u.suspended AND COALESCE(m.is_active, true) AND (%s='' OR m.category=%s) AND ST_DWithin(m.location,ST_SetSRID(ST_MakePoint(%s,%s),4326)::geography,%s){owner_filter} ORDER BY ST_Distance(m.location,ST_SetSRID(ST_MakePoint(%s,%s),4326)::geography) LIMIT 100''',tuple(params))
 @app.get('/api/fleet')
 def fleet(u=Depends(user)):
     with db() as c: return many(c,MACHINE_SELECT+' WHERE m.owner_id=%s ORDER BY m.created_at',(u['id'],))
@@ -603,9 +636,10 @@ def fleet_maintenance(start:AwareDatetime,end:AwareDatetime,u=Depends(user)):
 @app.get('/api/machines/{ident}/availability')
 def availability(ident:UUID,duration_minutes:int=120,u=Depends(optional_user)):
     with db() as c:
-        m=one(c,'SELECT id,owner_id,buffer_minutes,active,COALESCE(is_active,true) AS is_active FROM machines WHERE id=%s',(ident,))
+        expire_pending(c)
+        m=one(c,'SELECT id,owner_id,buffer_minutes,active,moderated,COALESCE(is_active,true) AS is_active FROM machines WHERE id=%s',(ident,))
         require(m is not None,'Machine not found',404)
-        require(m['active'] and m['is_active'],'This equipment is currently unavailable.',400)
+        require(m['active'] and m['is_active'] and not m['moderated'],'This equipment is currently unavailable.',400)
         buffer=m['buffer_minutes'] if m else 15
         reserved=many(c,"SELECT start_at,reserved_until AS end_at,reserved_until,status,quantity FROM bookings WHERE machine_id=%s AND status IN ('PENDING','APPROVED','IN_PROGRESS') AND reserved_until>now() ORDER BY start_at",(ident,))
         maintenance=many(c,'SELECT start_at,end_at,reason FROM maintenance WHERE machine_id=%s AND end_at>now() ORDER BY start_at',(ident,))
@@ -633,6 +667,7 @@ class SelectedAttachment(BaseModel):
     rate:Decimal=Field(ge=0,le=50000,max_digits=12,decimal_places=2)
 
 class Booking(BaseModel):
+    group_id:UUID|None=None
     contact_phone:str|None=Field(default=None,pattern=r'^\+91[6-9]\d{9}$')
     machine_id:UUID
     start_at:AwareDatetime
@@ -653,10 +688,14 @@ def quote_for(p,m):
     require(quantity is not None,'Acreage required',422)
     addons_rate=Decimal('0')
     if getattr(p,'selected_attachments',None):
+        offered={a['name']:Decimal(str(a['rate'])) for a in (m.get('attachments') or [])}
+        require(len({a.name for a in p.selected_attachments})==len(p.selected_attachments),'Select each attachment only once',422)
         for att in p.selected_attachments:
-            addons_rate += Decimal(str(att.rate))
+            require(att.name in offered and att.rate==offered[att.name],'Attachment price changed or is unavailable. Refresh equipment details.',409)
+            addons_rate += offered[att.name]
     fuel_extra=Decimal('0')
-    if getattr(p,'fuel_included',False) and m.get('fuel_rate_extra'):
+    if getattr(p,'fuel_included',False):
+        require(m.get('fuel_included',False),'Fuel option is unavailable',409)
         fuel_extra=Decimal(str(m['fuel_rate_extra']))
         addons_rate += fuel_extra
     b=bill(m['rate'],quantity,m['mobilization'],addons_rate=addons_rate)
@@ -674,27 +713,36 @@ def quote(p:Booking,u=Depends(renter)):
     with db() as c:
         m=one(c,'SELECT * FROM machines WHERE id=%s',(p.machine_id,))
         require(m is not None,'Machine not found',404)
-        require(m['active'] and m.get('is_active', True),'This equipment is currently unavailable.',400)
+        require(m['active'] and m.get('is_active', True) and not m.get('moderated',False),'This equipment is currently unavailable.',400)
         require(m['owner_id']!=u['id'],'You cannot book your own equipment.',403)
+        require(one(c,'SELECT id FROM users WHERE id=%s AND NOT suspended',(m['owner_id'],)) is not None,'Equipment owner is currently unavailable',409)
         q,b,addons_rate,fuel_extra=quote_for(p,m)
         return {**b,'quantity':q,'unit':m['unit'],'rate':m['rate'],'addons_rate':addons_rate,'fuel_extra':fuel_extra,'payment':'Directly to owner outside platform'}
 @app.post('/api/bookings')
 def book(p:Booking,u=Depends(renter)):
+    return create_booking(p,u)
+
+def create_booking(p,u,assisted_by=None):
     try:
         validate_booking_interval(p.start_at, p.end_at)
     except ValueError as e:
         raise HTTPException(400, str(e))
     req_hash=hashlib.sha256(p.model_dump_json().encode()).hexdigest()
     with db() as c:
+        expire_pending(c)
+    with db() as c:
         c.execute('SELECT pg_advisory_xact_lock(hashtextextended(%s,0))',(str(u['id'])+str(p.idempotency_key),))
         existing=one(c,'SELECT * FROM bookings WHERE farmer_id=%s AND idempotency_key=%s',(u['id'],p.idempotency_key))
         if existing:
-            require(existing['request_hash']==req_hash,'Idempotency key reused with changed request',409)
+            legacy_hash=hashlib.sha256(p.model_dump_json(exclude={'group_id'}).encode()).hexdigest()
+            legacy_match=p.group_id is None and existing.get('group_id') is None and existing['request_hash']==legacy_hash
+            require(existing['request_hash']==req_hash or legacy_match,'Idempotency key reused with changed request',409)
             return existing
         m=one(c,'SELECT * FROM machines WHERE id=%s FOR UPDATE',(p.machine_id,))
         require(m is not None,'Machine not found',404)
-        require(m['active'] and m.get('is_active', True),'This equipment is currently unavailable.',400)
+        require(m['active'] and m.get('is_active', True) and not m.get('moderated',False),'This equipment is currently unavailable.',400)
         require(m['owner_id']!=u['id'],'You cannot book your own equipment.',403)
+        require(one(c,'SELECT id FROM users WHERE id=%s AND NOT suspended',(m['owner_id'],)) is not None,'Equipment owner is currently unavailable',409)
         quantity,b,addons_rate,fuel_extra=quote_for(p,m)
         reserved_until=p.end_at+timedelta(minutes=m['buffer_minutes'])
         blocked=one(c,"SELECT id FROM maintenance WHERE machine_id=%s AND tstzrange(start_at,end_at,'[)') && tstzrange(%s,%s,'[)')",(p.machine_id,p.start_at,reserved_until))
@@ -702,9 +750,12 @@ def book(p:Booking,u=Depends(renter)):
         ident=uid()
         sel_att_json=Jsonb([att.model_dump(mode='json') for att in p.selected_attachments])
         row=one(c,'INSERT INTO bookings(id,machine_id,farmer_id,start_at,end_at,reserved_until,quantity,latitude,longitude,rate,unit,mobilization,estimate,idempotency_key,request_hash,selected_attachments,fuel_included,fuel_extra) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *',(ident,p.machine_id,u['id'],p.start_at,p.end_at,reserved_until,quantity,p.latitude,p.longitude,m['rate'],m['unit'],m['mobilization'],b['total'],p.idempotency_key,req_hash,sel_att_json,p.fuel_included,fuel_extra))
+        if p.group_id:
+            require(one(c,'SELECT 1 FROM rental_group_members WHERE group_id=%s AND user_id=%s FOR SHARE',(p.group_id,u['id'])) is not None,'Join the group before adding a rental',403)
+        row=one(c,"UPDATE bookings SET assisted_by=%s,group_id=%s,response_due_at=LEAST(start_at,now()+interval '24 hours') WHERE id=%s RETURNING *",(assisted_by,p.group_id,ident))
         if p.contact_phone:
             c.execute('INSERT INTO booking_contacts(booking_id,phone) VALUES(%s,%s)',(ident,p.contact_phone))
-        audit(c,u['id'],ident,'BOOKING_REQUESTED')
+        audit(c,assisted_by or u['id'],ident,'BOOKING_REQUESTED',{'assisted_by':str(assisted_by) if assisted_by else None})
         notify(c,m['owner_id'],f'New booking request {ident}')
         notify(c,u['id'],f'Booking {ident} awaits owner approval')
         return row
@@ -736,9 +787,12 @@ def booking_access(c,ident,u,lock=False):
     return row
 @app.get('/api/bookings')
 def bookings(u=Depends(user)):
-    with db() as c: return many(c,BOOKING_SELECT+' WHERE b.farmer_id=%s OR m.owner_id=%s OR b.operator_id=%s ORDER BY b.created_at DESC',(u['id'],)*3)
+    with db() as c:
+        expire_pending(c)
+        return many(c,BOOKING_SELECT+' WHERE b.farmer_id=%s OR m.owner_id=%s OR b.operator_id=%s ORDER BY b.created_at DESC',(u['id'],)*3)
 class Action(BaseModel):
     action:Literal['approve','reject','cancel']
+    reason:str=Field(default='',max_length=500)
 
 @app.get('/api/bookings/{ident}/farmer-contact')
 def farmer_contact(ident:UUID,u=Depends(user)):
@@ -752,6 +806,8 @@ def farmer_contact(ident:UUID,u=Depends(user)):
 @app.post('/api/bookings/{ident}/action')
 def action(ident:UUID,p:Action,u=Depends(user)):
     with db() as c:
+        expire_pending(c)
+    with db() as c:
         b=booking_access(c,ident,u,True)
         if p.action=='cancel':
             require(u['id'] in (b['owner_id'],b['farmer_id']))
@@ -762,8 +818,8 @@ def action(ident:UUID,p:Action,u=Depends(user)):
             require(b['status']=='PENDING','Only pending requests can be approved or rejected',409)
             require(b['start_at']>datetime.now(timezone.utc),'Request start time has passed; cancel and rebook',409)
             state='APPROVED' if p.action=='approve' else 'REJECTED'
-        c.execute('UPDATE bookings SET status=%s WHERE id=%s',(state,ident))
-        audit(c,u['id'],ident,state)
+        c.execute('UPDATE bookings SET status=%s,closure_reason=%s WHERE id=%s',(state,p.reason.strip() if state!='APPROVED' else '',ident))
+        audit(c,u['id'],ident,state,{'reason':p.reason.strip()} if state!='APPROVED' else {})
         notify(c,b['farmer_id'],f'Booking {ident}: {state}')
         notify(c,b['owner_id'],f'Booking {ident}: {state}')
         if b.get('operator_id'):
@@ -923,7 +979,10 @@ def invoice(ident:UUID,u=Depends(user)):
         }
 @app.get('/api/notifications')
 def notifications(u=Depends(user)):
-    with db() as c: return many(c,'SELECT * FROM notifications WHERE user_id=%s ORDER BY created_at DESC LIMIT 100',(u['id'],))
+    with db() as c:
+        expire_pending(c)
+        reminders(c,u['id'])
+        return many(c,'SELECT * FROM notifications WHERE user_id=%s ORDER BY created_at DESC LIMIT 100',(u['id'],))
 @app.get('/api/bookings/{ident}/audit')
 def history(ident:UUID,u=Depends(user)):
     with db() as c:
@@ -1020,3 +1079,6 @@ def weather(latitude: float = 30.901, longitude: float = 75.857):
 async def invalid(request,exc):
     from fastapi.responses import JSONResponse
     return JSONResponse(status_code=422,content={'detail':str(exc)})
+
+from app.operations import register
+register(app,sys.modules[__name__])

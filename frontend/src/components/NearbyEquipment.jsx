@@ -3,6 +3,7 @@ import { getDistanceKm } from '../data/villages';
 import { INR, translate } from '../locales';
 
 import { VillagePicker, recentVillage } from './VillagePicker';
+import { EquipmentPhotos } from './EquipmentPhotos';
 const types = ['Tractor', 'Rotavator', 'Harvester', 'Seed drill', 'Sprayer', 'Cultivator'];
 const apiBase = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
 
@@ -28,6 +29,7 @@ function Listing({ machine, lang, onEstimate, onRequest }) {
   }
   const format = value => new Date(value).toLocaleString(lang + '-IN', { dateStyle: 'short', timeStyle: 'short' });
   return <article className="ys-listing">
+    <EquipmentPhotos machine={machine} />
     <header><small>{machine.category}</small><h3>{machine.name}</h3></header>
     <p>{machine.village} · {machine.distance.toFixed(1)} km</p>
     <strong>{INR(machine.rate)} · {t(machine.unit === 'acre' ? 'perAcre' : 'perHour')}</strong>

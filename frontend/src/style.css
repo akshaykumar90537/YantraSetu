@@ -299,3 +299,5 @@
 .week-event.buffer {background:#f9efc7;color:#684e09}
 .week-event.maintenance {background:#e8e6f5;color:#4a3964}
 .compare-week {margin-bottom:1rem}
+
+.operations-panel{max-width:1000px;margin:auto}.operations-panel>section,.operations-panel article{padding:16px;border:1px solid #d3ddce;border-radius:12px;margin:16px 0}.operation-form{display:grid;gap:12px;padding:16px 0}.operation-form label{display:grid;gap:6px}.operation-form input,.operation-form select,.operation-form textarea{max-width:100%;min-width:0}.operation-form input[type=checkbox]{width:auto;justify-self:start}.booking-progress{display:flex;flex-wrap:wrap;gap:10px;padding:0;list-style:none;font-size:12px}.booking-progress li{padding:6px;border-bottom:3px solid #d3ddce}.booking-progress .reached{border-color:#285c43}.booking-progress [aria-current]{font-weight:bold}.booking-tools{margin-bottom:16px}.booking-tools summary{cursor:pointer;padding:10px 0}

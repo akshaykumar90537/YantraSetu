@@ -1,17 +1,23 @@
-import React from 'react';
+import { localizeOperations } from '../locales/operations';
+import React, { useState } from 'react';
+import { api } from '../api';
 import { MapPin, ArrowUpRight, Star, Fuel, Wrench, ShieldCheck } from 'lucide-react';
 import { TractorArt } from './TractorArt';
+import { EquipmentPhotos } from './EquipmentPhotos';
 import { INR, translate } from '../locales';
 
-export function MachineCard({ machine: m, index, onBook, lang = 'en' }) {
+export function MachineCard({ machine: m, index, onBook, canSave = false, lang = 'en' }) {
+  const [saved,setSaved]=useState(false),[saveError,setSaveError]=useState('');
   const t = (k, p) => translate(lang, k, p);
   const ratingCount = Number(m.rating_count) || 0;
   const ratingAvg = Number(m.rating_avg) || 0;
   const badges = Array.isArray(m.badges) ? m.badges.filter(Boolean) : [];
   const attachments = Array.isArray(m.attachments) ? m.attachments : [];
 
-  return (
+  return localizeOperations(
     <article className="machine-card" style={{ display: 'flex', flexDirection: 'column' }}>
+      {canSave&&<button className="text-button" disabled={saved} onClick={async()=>{try{await api('/saved-machines/'+m.id,{});setSaved(true);setSaveError('');}catch(e){setSaveError(e.message);}}}>{saved?'Saved':'Save equipment'}</button>}{saveError&&<p role="alert">{saveError}</p>}
+      <details><summary>Equipment ID for booking assistance</summary><code style={{overflowWrap:'anywhere'}}>{m.id}</code></details>
       <div className={'machine-image color-' + (index % 3)} style={{ position: 'relative' }}>
         <span className="tag">{m.category}</span>
         
@@ -36,8 +42,7 @@ export function MachineCard({ machine: m, index, onBook, lang = 'en' }) {
           <span>{ratingCount > 0 ? `${ratingAvg.toFixed(1)} (${ratingCount})` : 'New'}</span>
         </div>
 
-        <TractorArt />
-        <span className="illustration-label">{t('illustrationNotPhoto')}</span>
+        {m.photo_ids?.length ? <EquipmentPhotos lang={lang} machine={m} /> : <><TractorArt /><span className="illustration-label">{t('illustrationNotPhoto')}</span></>}
       </div>
 
       <div className="machine-body" style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
@@ -52,6 +57,7 @@ export function MachineCard({ machine: m, index, onBook, lang = 'en' }) {
         </div>
 
         <h3 style={{ margin: '6px 0 4px', fontSize: '18px' }}>{m.name}</h3>
+        <p>Condition: {m.condition || 'Not specified'}{m.horsepower ? ` · ${m.horsepower} HP` : ''} · {m.transport_available ? 'Transport offered; confirm arrangements' : 'Confirm transport with owner'}</p>
         <p style={{ margin: '0 0 10px', fontSize: '13px', color: '#4b5563', lineHeight: '1.4' }}>
           {m.description || 'Contact owner to confirm machine specifications.'}
         </p>
@@ -135,5 +141,5 @@ export function MachineCard({ machine: m, index, onBook, lang = 'en' }) {
         </small>
       </div>
     </article>
-  );
+  ,lang);
 }

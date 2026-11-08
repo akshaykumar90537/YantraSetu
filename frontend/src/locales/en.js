@@ -81,7 +81,8 @@ export const en = {
   viewBookings: 'View bookings',
 
   // Notifications
-  notificationsBanner: 'SMS simulation only. These are in-app notifications; no text messages were sent.',
+  community: 'Community & support',
+  notificationsBanner: 'In-app notifications. No email or SMS messages are sent.',
   noNotifications: 'No notifications yet.',
 
   // Modals & Forms
@@ -137,7 +138,7 @@ export const en = {
 
   // Machine Form
   putMachineToWork: 'Put your machine to work.',
-  newListingNote: 'New listings are unverified. An illustration is used until photo uploads are implemented.',
+  newListingNote: 'New listings are unverified. Owner photos are not independently verified. Listings without photos use an illustration.',
   machineNameModel: 'Machine name / model',
   categoryLabel: 'Category',
   villageLabel: 'Village',

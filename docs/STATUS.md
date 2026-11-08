@@ -1,5 +1,11 @@
 # Development status — 30 October 2026
 
+## Pilot dashboard increment — 8 November 2026
+
+The equipment, booking, community and staff workflows listed in [STARTUP_ROADMAP.md](STARTUP_ROADMAP.md) now have local implementation and real PostgreSQL/PostGIS integration coverage. This includes compressed persistent photos, request expiry, in-app reminders, travel/readiness updates, private support cases, staff moderation, saved machines, group coordination, village demand and consent-based FPO assistance. New UI labels/consent text support Hindi/Punjabi; some dynamic messages remain English.
+
+See [PILOT_OPERATIONS.md](PILOT_OPERATIONS.md) for migration 007–009, staff configuration, precise test scope and backup instructions. Native backup/restore passed in a disposable schema; production restore and live deployment remain unverified. Earlier statements below about PostgreSQL not being installed describe the original October environment and are superseded by the current local PostGIS test results.
+
 ## Booking contact update — 7 November 2026
 
 The booking form now requires an Indian mobile contact number and explains that it is shared with the equipment owner after acceptance. Migration 006 stores this number separately for each booking, without changing login identity or meter-code delivery. Only the machine owner can retrieve it for approved, in-progress or completed bookings; pending, rejected and cancelled bookings do not expose it. The owner booking card provides a telephone link and labels the number as farmer-provided, not SMS verified. Existing bookings and older API clients without contact details remain supported and display a missing-contact message. Apply migrations before running the updated API.

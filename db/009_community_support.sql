@@ -1,0 +1,10 @@
+ALTER TABLE users ADD COLUMN suspended boolean NOT NULL DEFAULT false;
+ALTER TABLE machines ADD COLUMN moderated boolean NOT NULL DEFAULT false;
+ALTER TABLE bookings ADD COLUMN assisted_by uuid REFERENCES users;
+CREATE TABLE support_cases(id uuid PRIMARY KEY,booking_id uuid REFERENCES bookings,reporter_id uuid NOT NULL REFERENCES users,kind text NOT NULL CHECK(kind IN ('BREAKDOWN','DELAY','BILLING','SAFETY','OTHER')),description text NOT NULL,status text NOT NULL DEFAULT 'OPEN' CHECK(status IN ('OPEN','IN_REVIEW','RESOLVED')),resolution text NOT NULL DEFAULT '',created_at timestamptz NOT NULL DEFAULT now(),updated_at timestamptz NOT NULL DEFAULT now());
+CREATE TABLE equipment_demand(id uuid PRIMARY KEY,farmer_id uuid NOT NULL REFERENCES users,village text NOT NULL,category text NOT NULL,needed_at timestamptz NOT NULL,notes text NOT NULL DEFAULT '',status text NOT NULL DEFAULT 'OPEN' CHECK(status IN ('OPEN','CLOSED')),created_at timestamptz NOT NULL DEFAULT now());
+CREATE TABLE booking_delegations(farmer_id uuid REFERENCES users,coordinator_id uuid REFERENCES users,expires_at timestamptz NOT NULL,PRIMARY KEY(farmer_id,coordinator_id));
+CREATE TABLE rental_groups(id uuid PRIMARY KEY,organizer_id uuid NOT NULL REFERENCES users,name text NOT NULL,created_at timestamptz NOT NULL DEFAULT now());
+CREATE TABLE rental_group_members(group_id uuid REFERENCES rental_groups,user_id uuid REFERENCES users,PRIMARY KEY(group_id,user_id));
+ALTER TABLE bookings ADD COLUMN group_id uuid REFERENCES rental_groups;
+INSERT INTO schema_versions(version) VALUES(9);

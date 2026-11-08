@@ -5,10 +5,10 @@ services:
     region: ohio
     plan: free
     buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn backend.app.main:app --host 0.0.0.0 --port $PORT
+    startCommand: python dev.py init && uvicorn backend.app.main:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: DATABASE_URL
-        value: postgresql://yantrasetu_db_259k_user:5srwwORc3rdH29nOR0bOqvsDDB0UuC6W@dpg-dbic88nf3r2c73ckvl30-a/yantrasetu_db_259k
+        sync: false
       - key: OTP_SECRET
         generateValue: true
       - key: APP_ENV

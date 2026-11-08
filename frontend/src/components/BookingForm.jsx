@@ -1,3 +1,4 @@
+import { localizeOperations } from '../locales/operations';
 import React, { useState, useEffect } from 'react';
 import { FormField } from './Common';
 import { api } from '../api';
@@ -6,9 +7,11 @@ import { TimelineCalendar } from './TimelineCalendar';
 import { MapPicker } from './MapPicker';
 import { MapPin, Wrench, Fuel, CheckCircle2 } from 'lucide-react';
 
-export function BookingForm({ machine: m, online, busy, run, onDone, lang = 'en' }) {
+export function BookingForm({ machine: m, online, busy, run, onDone, lang = 'en', assistedFarmerId = null }) {
   if (!m) return null;
 
+  const [groups,setGroups]=useState([]),[groupError,setGroupError]=useState('');
+  useEffect(()=>{if(assistedFarmerId)return;let active=true;api('/rental-groups').then(g=>{if(active)setGroups(g);}).catch(e=>{if(active)setGroupError(e.message);});return()=>{active=false;};},[assistedFarmerId]);
   const [quote, setQuote] = useState(null);
   const [idempotencyKey] = useState(() => {
     try {
@@ -120,6 +123,7 @@ export function BookingForm({ machine: m, online, busy, run, onDone, lang = 'en'
     const f = new FormData(form);
     return {
       machine_id: m.id,
+      group_id: f.get('group_id') || null,
       start_at: new Date(f.get('start')).toISOString(),
       end_at: new Date(f.get('end')).toISOString(),
       acres: m.unit === 'acre' ? parseFloat(f.get('acres') || acresVal || '1') : null,
@@ -145,7 +149,7 @@ export function BookingForm({ machine: m, online, busy, run, onDone, lang = 'en'
     }
   }
 
-  return (
+  return localizeOperations(
     <>
       <span className="eyebrow">{t('bookNearby')}</span>
       <h2>{m.name}</h2>
@@ -170,7 +174,8 @@ export function BookingForm({ machine: m, online, busy, run, onDone, lang = 'en'
           run(async () => onDone(d, !online));
         }}
       >
-        <FormField label="Your mobile number (India)">
+        {!assistedFarmerId&&<FormField label="Rental group (optional)"><select name="group_id"><option value="">Individual rental</option>{groups.map(g=><option key={g.id} value={g.id}>{g.name}</option>)}</select>{groupError&&<p role="alert">Could not load groups: {groupError}</p>}</FormField>}
+        <FormField label={assistedFarmerId?'Farmer’s mobile number (with their permission)':'Your mobile number (India)'}>
           <input name="contact_phone" type="tel" inputMode="tel" autoComplete="tel-national"
             placeholder="9876543210" pattern="(?:\+91)?[6-9][0-9]{9}" maxLength={13} required
             aria-describedby="booking-contact-help" />
@@ -394,7 +399,7 @@ export function BookingForm({ machine: m, online, busy, run, onDone, lang = 'en'
               onClick={(e) => {
                 const form = e.currentTarget.form;
                 if (form.reportValidity()) {
-                  run(async () => setQuote(await api('/quote', payload(form))));
+                  run(async () => setQuote(await api(assistedFarmerId?'/assisted-quote':'/quote', {...payload(form),...(assistedFarmerId?{farmer_id:assistedFarmerId}:{})})));
                 }
               }}
             >
@@ -407,5 +412,5 @@ export function BookingForm({ machine: m, online, busy, run, onDone, lang = 'en'
         </div>
       </form>
     </>
-  );
+  ,lang);
 }

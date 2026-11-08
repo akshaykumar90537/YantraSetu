@@ -81,7 +81,8 @@ export const hi = {
   viewBookings: 'बुकिंग्स देखें',
 
   // Notifications
-  notificationsBanner: 'SMS सिमुलेशन केवल। ये इन-ऐप सूचनाएं हैं; वास्तविक SMS नहीं भेजा गया।',
+  community: 'समुदाय और सहायता',
+  notificationsBanner: 'ऐप के अंदर सूचनाएँ। ईमेल या SMS संदेश नहीं भेजे जाते।',
   noNotifications: 'कोई नई सूचना नहीं।',
 
   // Modals & Forms

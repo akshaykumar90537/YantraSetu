@@ -1,0 +1,11 @@
+ALTER TABLE bookings ADD COLUMN response_due_at timestamptz NOT NULL DEFAULT now()+interval '24 hours';
+UPDATE bookings SET response_due_at=LEAST(start_at,created_at+interval '24 hours');
+ALTER TABLE bookings ADD COLUMN closure_reason text NOT NULL DEFAULT '';
+ALTER TABLE bookings ADD COLUMN travel_status text NOT NULL DEFAULT 'NOT_STARTED' CHECK(travel_status IN ('NOT_STARTED','ON_THE_WAY','ARRIVED'));
+ALTER TABLE bookings ADD COLUMN readiness jsonb NOT NULL DEFAULT '{}';
+ALTER TABLE notifications ADD COLUMN read_at timestamptz;
+ALTER TABLE notifications ALTER COLUMN delivery SET DEFAULT 'IN_APP';
+CREATE TABLE notification_preferences(user_id uuid PRIMARY KEY REFERENCES users, reminders boolean NOT NULL DEFAULT true);
+CREATE TABLE reminder_receipts(booking_id uuid REFERENCES bookings,user_id uuid REFERENCES users,PRIMARY KEY(booking_id,user_id));
+CREATE TABLE saved_machines(user_id uuid REFERENCES users,machine_id uuid REFERENCES machines,PRIMARY KEY(user_id,machine_id));
+INSERT INTO schema_versions(version) VALUES(8);

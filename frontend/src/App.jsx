@@ -40,6 +40,7 @@ import { RatingModal } from './components/RatingModal';
 import { WeatherDashboard } from './components/WeatherDashboard';
 import { LandingPage } from './components/LandingPage';
 import './style.css';
+import { OperationsPanel } from './components/OperationsPanel';
 import { AuthGate } from './components/AuthGate';
 
 export function App() {
@@ -176,6 +177,8 @@ function Workspace({ entry, initialUser, onLogout, sharedLang, setSharedLang }) 
     }
   }, [u]);
 
+  useEffect(()=>{if(u && ['activity','bookings'].includes(tab))load().catch(e=>setError(e.message));},[tab,u.id]);
+
   async function run(fn) {
     setError('');
     setNotice('');
@@ -263,6 +266,7 @@ function Workspace({ entry, initialUser, onLogout, sharedLang, setSharedLang }) 
       : []),
     ...(u?.roles.includes('fpo') ? [['org', Users, t('org')]] : []),
     ['activity', Bell, t('activity')],
+    ['community', Users, ({hi:'समुदाय और सहायता',pa:'ਭਾਈਚਾਰਾ ਅਤੇ ਸਹਾਇਤਾ'})[lang] || 'Community & support'],
   ];
 
   function openBooking(m) {
@@ -473,7 +477,7 @@ function Workspace({ entry, initialUser, onLogout, sharedLang, setSharedLang }) 
             </div>
           )}
 
-          {tab === 'dashboard' ? <section className="work-dashboard">
+          {tab === 'community' ? <OperationsPanel user={u} openBooking={openBooking} lang={lang}/> : tab === 'dashboard' ? <section className="work-dashboard">
             <div className="section-title"><div><span className="eyebrow">{t('dashboard')}</span><h1>{u.name}</h1></div></div>
             {loadingOrError(isOwner?['bookings','fleet']:['bookings']) || (isOwner ? <div className="work-tiles">
               <article><h2>{t('requestsReview')}</h2><strong>{pending.length}</strong><button className="primary" disabled={!pending.length} onClick={()=>showBookings('actionGroup')}>{t('reviewRequests')}</button></article>
@@ -620,6 +624,7 @@ function Workspace({ entry, initialUser, onLogout, sharedLang, setSharedLang }) 
                     <div className="cards">
                       {visibleMachines.map((m, i) => (
                         <MachineCard
+                          canSave={rentalAllowed}
                           key={m.id}
                           machine={m}
                           index={i}
@@ -933,7 +938,7 @@ function Workspace({ entry, initialUser, onLogout, sharedLang, setSharedLang }) 
                         <div className="notification" key={n.id}>
                           <Bell size={19} />
                           <div>
-                            <p>{n.message}</p>
+                            <p>{n.message}</p>{!n.read_at && <button className="text-button" onClick={()=>run(async()=>{await api('/notifications/'+n.id+'/read',{});await load();})}>Mark read</button>}
                             <small>
                               {dt(n.created_at)} · {n.delivery}
                             </small>

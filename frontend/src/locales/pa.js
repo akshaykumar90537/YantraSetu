@@ -81,7 +81,8 @@ export const pa = {
   viewBookings: 'ਬੁਕਿੰਗਾਂ ਦੇਖੋ',
 
   // Notifications
-  notificationsBanner: 'SMS ਸਿਰਫ਼ ਟੈਸਟਿੰਗ ਲਈ। ਇਹ ਐਪ ਦੇ ਅੰਦਰੂਨੀ ਸੁਨੇਹੇ ਹਨ; ਕੋਈ ਅਸਲ SMS ਨਹੀਂ ਭੇਜਿਆ ਗਿਆ।',
+  community: 'ਭਾਈਚਾਰਾ ਅਤੇ ਸਹਾਇਤਾ',
+  notificationsBanner: 'ਐਪ ਦੇ ਅੰਦਰ ਸੂਚਨਾਵਾਂ। ਈਮੇਲ ਜਾਂ SMS ਸੁਨੇਹੇ ਨਹੀਂ ਭੇਜੇ ਜਾਂਦੇ।',
   noNotifications: 'ਕੋਈ ਨਵਾਂ ਸੁਨੇਹਾ ਨਹੀਂ।',
 
   // Modals & Forms
