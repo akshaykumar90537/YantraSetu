@@ -28,7 +28,7 @@ from app.domain import can_rent, bill, meter_quantity, find_next_available_slot,
 from app.sms import provider
 from app.email_auth import email_mode, send_email, verify_google
 from app.passwords import hash_password, check_password, DUMMY_HASH
-from app.photos import save_photos
+from app.photos import save_photos, normalize_photo
 from app.booking_operations import expire_pending, reminders
 
 app=FastAPI(title='YantraSetu',version='0.1.0')
@@ -188,7 +188,7 @@ def consume(c,ident,code,purpose,actor=None):
     require(DEV or not row['payload'].get('development',False) or row.get('purpose') in ('login','email_login'),'Development codes cannot be used in production',400)
     if purpose == 'email_login':
         require(not row['payload'].get('development', False), 'Request a new email code.', 400)
-    if actor: require(row['phone']==contact(actor),'This code belongs to the farmer who booked')
+    if actor: require(row['phone'] in ({actor.get('email'),actor.get('phone')} if purpose=='meter' else {contact(actor)}),'This code belongs to the farmer who booked')
     require(row['consumed_at'] is None and row['expires_at']>datetime.now(timezone.utc) and row['attempts']<5,'Code expired or locked',400)
     c.execute('UPDATE challenges SET attempts=attempts+1 WHERE id=%s',(ident,))
     if not hmac.compare_digest(row['digest'],digest(str(ident)+code)):
@@ -758,7 +758,19 @@ def assign(ident:UUID,p:OperatorAssignment,u=Depends(user)):
         audit(c,u['id'],ident,'OPERATOR_ASSIGNED',{'operator_id':str(op['id'])})
         notify(c,op['id'],f'Assigned booking {ident}. Contact owner if unavailable.')
     return {'ok':True}
+class AdditionalCharge(BaseModel):
+    description:str=Field(min_length=3,max_length=160)
+    amount:Decimal=Field(gt=0,le=100000,max_digits=10,decimal_places=2)
+    @field_validator('description')
+    @classmethod
+    def charge_description(cls,value):
+        value=value.strip()
+        if len(value)<3: raise ValueError('Describe the additional charge')
+        return value
 class Reading(BaseModel):
+    condition:str=Field(default='',max_length=2000)
+    photos:list[str]=Field(default_factory=list,max_length=3)
+    additional_charges:list[AdditionalCharge]=Field(default_factory=list,max_length=10)
     stage:Literal['start','end']
     reading:Decimal=Field(ge=0,le=100000000,max_digits=12,decimal_places=3)
     acres:Decimal|None=Field(default=None,gt=0,le=10000,max_digits=12,decimal_places=3)
@@ -769,10 +781,24 @@ def meter_request(ident:UUID,p:Reading,u=Depends(user)):
         require(u['id'] in (b['owner_id'],b['operator_id']),'Owner or assigned operator submits readings')
         require(b['status']==('APPROVED' if p.stage=='start' else 'IN_PROGRESS'),'Wrong booking stage',409)
         if p.stage=='end':
+            require(p.reading>Decimal(str(b['meter_start'])),'End reading must exceed the confirmed start reading',422)
             meter_quantity(b['meter_start'],p.reading)
             require(b['unit']!='acre' or p.acres is not None,'Completed acreage required',422)
+        require(not p.additional_charges or p.stage=='end','Additional charges are agreed at return',422)
+        photos=[(uid(),normalize_photo(photo)) for photo in p.photos]
+        detail={'booking_id':str(ident),'stage':p.stage,'reading':str(p.reading),'acres':str(p.acres) if p.acres is not None else None,
+                'condition':p.condition.strip(),'additional_charges':[x.model_dump(mode='json') for x in p.additional_charges],
+                'photo_ids':[x[0] for x in photos],'submitted_by':str(u['id'])}
         farmer=one(c,'SELECT phone,email FROM users WHERE id=%s',(b['farmer_id'],))
-        result=issue(c,contact(farmer),'meter',{'booking_id':str(ident),'stage':p.stage,'reading':str(p.reading),'acres':str(p.acres) if p.acres is not None else None})
+        destination=farmer.get('email') or farmer.get('phone')
+        require(bool(destination),'Renter has no registered verification contact',422)
+        require(DEV or '@' in destination,'Live SMS verification is not configured; renter needs a registered email',503)
+        result=issue(c,destination,'meter',detail)
+        # Replacements invalidate old codes; never allow a stale reading or charge to be confirmed.
+        c.execute("UPDATE challenges SET consumed_at=now() WHERE purpose='meter' AND payload->>'booking_id'=%s AND id!=%s AND consumed_at IS NULL",(str(ident),result['challenge_id']))
+        c.execute('INSERT INTO rental_handover_records(id,booking_id,submitted_by,stage,detail) VALUES(%s,%s,%s,%s,%s)',(result['challenge_id'],ident,u['id'],p.stage,Jsonb(detail)))
+        for photo_id,image in photos:
+            c.execute('INSERT INTO rental_evidence_photos(id,record_id,image) VALUES(%s,%s,%s)',(photo_id,result['challenge_id'],image))
         audit(c,u['id'],ident,'METER_CONFIRMATION_REQUESTED',{'stage':p.stage,'reading':str(p.reading)})
         return result
 @app.get('/api/bookings/{ident}/meter/pending')
@@ -780,7 +806,7 @@ def pending_meter(ident:UUID,u=Depends(user)):
     with db() as c:
         b=booking_access(c,ident,u)
         require(b['farmer_id']==u['id'])
-        return many(c,"SELECT id,payload,expires_at FROM challenges WHERE phone=%s AND purpose='meter' AND payload->>'booking_id'=%s AND consumed_at IS NULL AND expires_at>now() AND attempts<5 ORDER BY created_at DESC",(contact(u),str(ident)))
+        return many(c,"SELECT id,payload,expires_at FROM challenges WHERE purpose='meter' AND payload->>'booking_id'=%s AND consumed_at IS NULL AND expires_at>now() AND attempts<5 ORDER BY created_at DESC",(str(ident),))
 @app.post('/api/bookings/{ident}/meter/confirm')
 def meter_confirm(ident:UUID,p:Verify,u=Depends(user)):
     with db() as c:
@@ -810,11 +836,31 @@ def meter_confirm(ident:UUID,p:Verify,u=Depends(user)):
             if b.get('fuel_included') and b.get('fuel_extra'):
                 addons_rate += Decimal(str(b['fuel_extra']))
             addons_rate += Decimal(str(b.get('operator_extra') or 0))
-            total=bill(b['rate'],quantity,b['mobilization'],addons_rate=addons_rate)['total']
+            extras=data.get('additional_charges',[])
+            extra_total=sum((Decimal(x['amount']) for x in extras),Decimal('0'))
+            total=bill(b['rate'],quantity,b['mobilization'],addons_rate=addons_rate)['total']+extra_total
+            c.execute('UPDATE bookings SET additional_charges=%s,additional_total=%s WHERE id=%s',(Jsonb(extras),extra_total,ident))
             c.execute("UPDATE bookings SET meter_end=%s,actual_quantity=%s,final_total=%s,status='COMPLETED' WHERE id=%s",(data['reading'],quantity,total,ident))
+        c.execute('UPDATE rental_handover_records SET confirmed_by=%s,confirmed_at=now() WHERE id=%s',(u['id'],p.challenge_id))
         audit(c,u['id'],ident,'METER_'+data['stage'].upper()+'_CONFIRMED',data)
         notify(c,b['owner_id'],f'Booking {ident}: {data["stage"]} reading confirmed by farmer')
     return {'ok':True}
+@app.get('/api/bookings/{ident}/handover-records')
+def handover_records(ident:UUID,u=Depends(user)):
+    with db() as c:
+        booking_access(c,ident,u)
+        return many(c,"""SELECT r.*,s.name AS submitted_name,f.name AS confirmed_name,
+          CASE WHEN r.confirmed_at IS NOT NULL THEN 'CONFIRMED' WHEN ch.consumed_at IS NOT NULL THEN 'SUPERSEDED'
+          WHEN ch.expires_at<=now() OR ch.attempts>=5 THEN 'EXPIRED' ELSE 'PENDING' END AS confirmation_status
+          FROM rental_handover_records r JOIN challenges ch ON ch.id=r.id JOIN users s ON s.id=r.submitted_by
+          LEFT JOIN users f ON f.id=r.confirmed_by WHERE r.booking_id=%s ORDER BY r.created_at""",(ident,))
+@app.get('/api/bookings/{ident}/evidence-photos/{photo_id}')
+def evidence_photo(ident:UUID,photo_id:UUID,u=Depends(user)):
+    with db() as c:
+        booking_access(c,ident,u)
+        row=one(c,'SELECT p.image FROM rental_evidence_photos p JOIN rental_handover_records r ON r.id=p.record_id WHERE p.id=%s AND r.booking_id=%s',(photo_id,ident))
+        require(row is not None,'Evidence photo not found',404)
+        return Response(bytes(row['image']),media_type='image/jpeg')
 class PaymentReport(BaseModel):
     status:Literal['UNPAID','PAID_OUTSIDE_PLATFORM','PAYMENT_DISPUTED']
 @app.post('/api/bookings/{ident}/payment-report')
@@ -881,6 +927,9 @@ def invoice(ident:UUID,u=Depends(user)):
         addons_rate += Decimal(str(b.get('operator_extra') or 0))
         
         breakdown=bill(b['rate'],b['actual_quantity'],b['mobilization'],addons_rate=addons_rate)
+        breakdown['additional_charges']=b.get('additional_charges',[])
+        breakdown['additional_total']=b.get('additional_total',0)
+        breakdown['total']+=Decimal(str(b.get('additional_total') or 0))
         return {
             'invoice_number':'YS-INV-'+str(ident)[:8].upper(),
             'booking_id':str(ident),

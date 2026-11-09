@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { EvidenceDetail } from './HandoverEvidence';
 import { FormField } from './Common';
 import { api } from '../api';
 import { translate } from '../locales';
@@ -38,6 +39,9 @@ export function ConfirmMeter({ booking: b, run, busy, done, lang = 'en' }) {
           {p.payload.acres && (
             <p>{t('completedAcreageLabel', { acres: p.payload.acres })}</p>
           )}
+          <EvidenceDetail detail={p.payload} bookingId={b.id}/>
+          <p>Expires: {new Date(p.expires_at).toLocaleString()}. If anything is incorrect, do not confirm; ask the owner to submit a corrected record.</p>
+          <label><input type="checkbox" required/>I confirm the equipment handover/return, meter reading and listed additional charges.</label>
           <FormField label="Verification code">
             <input
               name="code"
@@ -54,6 +58,7 @@ export function ConfirmMeter({ booking: b, run, busy, done, lang = 'en' }) {
         </form>
       ))}
 
+      <button type="button" disabled={busy} onClick={()=>run(async()=>setPending(await api('/bookings/'+b.id+'/meter/pending')))}>Refresh pending confirmation</button>
       {!pending.length && <p>{t('noPendingReading')}</p>}
     </>
   );

@@ -242,6 +242,7 @@ export function Invoice({ data, lang = 'en' }) {
               </td>
             </tr>
 
+            {(breakdown.additional_charges||[]).map((x,i)=><tr key={`extra-${i}`}><td style={{padding:10}}>{x.description} (agreed at return)</td><td style={{textAlign:'center'}}>{INR(x.amount)}</td><td style={{textAlign:'center'}}>1</td><td style={{textAlign:'right'}}>{INR(x.amount)}</td></tr>)}
             {/* Total Row */}
             <tr style={{ background: '#f8fafc', fontSize: '16px', fontWeight: '800' }}>
               <td colSpan="3" style={{ padding: '12px 10px', textAlign: 'right', color: '#1e293b' }}>
