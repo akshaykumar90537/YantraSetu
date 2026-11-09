@@ -27,18 +27,23 @@ export function RatingModal({ booking: b, user: u, onSubmitDone, lang = 'en' }) 
   const isOwner = u && (u.id === b.owner_id);
   const badgeOptions = isOwner ? FARMER_BADGES : OWNER_BADGES;
 
-  const [score, setScore] = useState(5);
-  const [punctuality, setPunctuality] = useState(5);
-  const [selectedBadges, setSelectedBadges] = useState(
-    isOwner ? ['Prompt Payment', 'Cooperative'] : ['Clean Machine', 'On-Time Arrival']
-  );
+  const [score, setScore] = useState(0);
+  const [punctuality, setPunctuality] = useState(0);
+  const [selectedBadges, setSelectedBadges] = useState([]);
   const [comment, setComment] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const [submitError, setSubmitError] = useState('');
+  const [retry, setRetry] = useState(0);
 
   useEffect(() => {
-    // Fetch existing rating if already rated
+    let active = true;
+    setLoading(true); setLoadError(''); setSubmitError('');
+    setScore(0); setPunctuality(0); setSelectedBadges([]); setComment('');
     api(`/bookings/${b.id}/rating`)
       .then((existing) => {
+        if (!active) return;
         if (existing) {
           if (existing.score) setScore(existing.score);
           if (existing.punctuality) setPunctuality(existing.punctuality);
@@ -46,8 +51,10 @@ export function RatingModal({ booking: b, user: u, onSubmitDone, lang = 'en' }) 
           if (existing.comment) setComment(existing.comment);
         }
       })
-      .catch(() => {});
-  }, [b.id]);
+      .catch(e => { if (active) setLoadError(e.message || 'Could not load your review. Please retry.'); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [b.id, retry]);
 
   function toggleBadge(badge) {
     if (selectedBadges.includes(badge)) {
@@ -59,7 +66,9 @@ export function RatingModal({ booking: b, user: u, onSubmitDone, lang = 'en' }) 
 
   async function handleSubmit(e) {
     e.preventDefault();
+    if (loading || loadError || submitting || !score || !punctuality) return;
     setSubmitting(true);
+    setSubmitError('');
     try {
       await api(`/bookings/${b.id}/rating`, {
         score,
@@ -67,8 +76,10 @@ export function RatingModal({ booking: b, user: u, onSubmitDone, lang = 'en' }) 
         badges: selectedBadges,
         comment,
       });
-      onSubmitDone(isOwner ? 'Farmer rating submitted successfully!' : 'Owner & equipment review saved!');
-    } catch {
+      await onSubmitDone(isOwner ? 'Farmer rating submitted successfully!' : 'Owner & equipment review saved!');
+    } catch (e) {
+      setSubmitError(e.message || 'Could not save your review. Your selections are still here; please retry.');
+    } finally {
       setSubmitting(false);
     }
   }
@@ -91,7 +102,10 @@ export function RatingModal({ booking: b, user: u, onSubmitDone, lang = 'en' }) 
         </div>
       </div>
 
+      {loading && <p role="status">Loading your review…</p>}
+      {loadError && <p role="alert">{loadError} <button type="button" onClick={() => setRetry(n => n + 1)}>Retry loading review</button></p>}
       <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        <p>Choose your overall and punctuality scores. Badges and comments are optional. Saving again updates your existing review.</p>
         
         {/* Overall Star Rating */}
         <div style={{ background: '#f8fafc', padding: '14px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
@@ -103,6 +117,9 @@ export function RatingModal({ booking: b, user: u, onSubmitDone, lang = 'en' }) 
               <button
                 key={star}
                 type="button"
+                aria-label={`Overall rating: ${star} of 5 stars`}
+                aria-pressed={score === star}
+                disabled={loading || !!loadError || submitting}
                 onClick={() => setScore(star)}
                 style={{
                   background: 'none',
@@ -145,6 +162,9 @@ export function RatingModal({ booking: b, user: u, onSubmitDone, lang = 'en' }) 
                 <button
                   key={p.val}
                   type="button"
+                  aria-label={`Punctuality: ${p.label}`}
+                  aria-pressed={active}
+                  disabled={loading || !!loadError || submitting}
                   onClick={() => setPunctuality(p.val)}
                   style={{
                     flex: 1,
@@ -179,6 +199,8 @@ export function RatingModal({ booking: b, user: u, onSubmitDone, lang = 'en' }) 
                 <button
                   key={badge}
                   type="button"
+                  aria-pressed={isSelected}
+                  disabled={loading || !!loadError || submitting}
                   onClick={() => toggleBadge(badge)}
                   style={{
                     background: isSelected ? '#dbeafe' : '#fff',
@@ -209,6 +231,8 @@ export function RatingModal({ booking: b, user: u, onSubmitDone, lang = 'en' }) 
             <span>{t('yourExperienceLabel')}</span>
           </label>
           <textarea
+            aria-label={t('yourExperienceLabel')}
+            disabled={loading || !!loadError || submitting}
             rows="3"
             maxLength="500"
             value={comment}
@@ -229,7 +253,8 @@ export function RatingModal({ booking: b, user: u, onSubmitDone, lang = 'en' }) 
           />
         </div>
 
-        <button className="primary full" disabled={submitting} style={{ padding: '10px' }}>
+        {submitError && <p role="alert">{submitError}</p>}
+        <button className="primary full" disabled={loading || !!loadError || submitting || !score || !punctuality} style={{ padding: '10px' }}>
           {submitting ? 'Submitting...' : t('saveRatingBtn')}
         </button>
       </form>

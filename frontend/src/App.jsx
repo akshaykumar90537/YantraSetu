@@ -301,6 +301,7 @@ function Workspace({ entry, initialUser, onLogout, sharedLang, setSharedLang }) 
   const today = new Date(); today.setHours(0,0,0,0);
   const tomorrow = new Date(today); tomorrow.setDate(today.getDate()+1);
   const todayJobs = active.filter(b=>b.owner_id===u.id && b.status!=='PENDING' && Date.parse(b.start_at)<tomorrow && Date.parse(b.end_at)>today);
+  const upcomingReturns=active.filter(b=>b.owner_id===u.id&&['APPROVED','IN_PROGRESS'].includes(b.status)).sort((a,b)=>Date.parse(a.end_at)-Date.parse(b.end_at)).slice(0,5);
   const nextRental = active.find(b=>b.status==='IN_PROGRESS') || active.find(b=>Date.parse(b.end_at)>Date.now());
   const completed = (Array.isArray(rows) ? rows : []).filter((b) => b && b.status === 'COMPLETED');
 
@@ -480,11 +481,12 @@ function Workspace({ entry, initialUser, onLogout, sharedLang, setSharedLang }) 
           {tab === 'community' ? <OperationsPanel user={u} openBooking={openBooking} lang={lang}/> : tab === 'dashboard' ? <section className="work-dashboard">
             <div className="section-title"><div><span className="eyebrow">{t('dashboard')}</span><h1>{u.name}</h1></div></div>
             {loadingOrError(isOwner?['bookings','fleet']:['bookings']) || (isOwner ? <div className="work-tiles">
-              <article><h2>{t('requestsReview')}</h2><strong>{pending.length}</strong><button className="primary" disabled={!pending.length} onClick={()=>showBookings('actionGroup')}>{t('reviewRequests')}</button></article>
+              <article><h2>{t('requestsReview')}</h2><strong>{pending.length}</strong>{pending.slice(0,5).map(b=><p key={b.id}>{b.machine_name} · {b.farmer_name}<br/>{dt(b.start_at)} · {INR(b.estimate)}<br/>Respond by {dt(b.response_due_at)}</p>)}<button className="primary" disabled={!pending.length} onClick={()=>showBookings('actionGroup')}>{t('reviewRequests')}</button></article>
               <article><h2>{t('todayJobs')}</h2><strong>{todayJobs.length}</strong>{todayJobs.map(b=><button className="text-button" key={b.id} onClick={()=>showBookings('booking-'+b.id)}>{b.machine_name} · {dt(b.start_at)}</button>)}</article>
+              <article><h2>Upcoming returns</h2>{upcomingReturns.length?upcomingReturns.map(b=><button className="text-button" key={b.id} onClick={()=>showBookings('booking-'+b.id)}>{b.machine_name} · {dt(b.end_at)} · {t(b.status)}</button>):<p>No upcoming returns.</p>}</article>
               <article><h2>{t('fleet')}</h2><strong>{fleet.length}</strong><button className="outline" onClick={()=>setTab('fleet')}>{t('fleetWeek')}</button><button className="text-button" onClick={()=>setModal({type:'machine'})}>{t('addMachinery')}</button></article>
             </div> : <article className="panel next-rental"><h2>{t('nextRental')}</h2>{nextRental ? <>
-              <strong>{nextRental.machine_name}</strong><p>{dt(nextRental.start_at)} – {dt(nextRental.end_at)}</p>
+              <strong>{nextRental.machine_name}</strong><p>Estimated cost: {INR(nextRental.estimate)}</p>{['APPROVED','IN_PROGRESS'].includes(nextRental.status)&&(nextRental.owner_phone?<a className="outline" href={'tel:'+nextRental.owner_phone}>Call {nextRental.owner_name || 'owner'}</a>:<p>Owner phone not provided. Open the booking for support.</p>)}<p>{dt(nextRental.start_at)} – {dt(nextRental.end_at)}</p>
               <p>{t(nextRental.status)} · {t(nextRental.needs_meter_confirmation && nextRental.farmer_id===u.id ? 'confirmReadingBtn' : nextRental.status==='PENDING' ? 'waitingOwner' : 'viewDetails')}</p>
               <button className="primary" onClick={()=>showBookings('booking-'+nextRental.id)}>{t('viewDetails')}</button></> : <p>{t('noUpcoming')}</p>}
               {rentalAllowed && <button className={nextRental?'outline':'primary'} onClick={()=>setTab('explore')}>{t('findVillage')}</button>}</article>)}

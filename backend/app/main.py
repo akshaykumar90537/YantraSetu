@@ -367,6 +367,7 @@ class Attachment(BaseModel):
     rate:Decimal=Field(ge=0,le=50000,max_digits=12,decimal_places=2)
 
 class Machine(BaseModel):
+    operator_rate_extra:Decimal|None=Field(default=None,ge=0,le=50000,max_digits=12,decimal_places=2)
     condition:Literal['Not specified','Excellent','Good','Needs service']='Not specified'
     horsepower:int|None=Field(default=None,ge=1,le=1000)
     transport_available:bool=False
@@ -414,7 +415,7 @@ class Machine(BaseModel):
         return v
 
 MACHINE_SELECT='''SELECT m.id,m.moderated,m.owner_id,m.organization_id,m.name,m.category,COALESCE(m.model, 'Standard') AS model,m.description,m.village,m.rate,m.unit,m.mobilization,m.buffer_minutes,m.active,COALESCE(m.is_active, m.active) AS is_active,COALESCE(m.attachments, '[]'::jsonb) AS attachments,COALESCE(m.fuel_included, false) AS fuel_included,COALESCE(m.fuel_rate_extra, 0) AS fuel_rate_extra,u.name AS owner_name,u.phone AS owner_phone,ST_Y(m.location::geometry) AS latitude,ST_X(m.location::geometry) AS longitude,
-m.condition,m.horsepower,m.transport_available,
+m.condition,m.horsepower,m.transport_available,m.operator_rate_extra,
 ARRAY(SELECT p.id FROM machine_photos p WHERE p.machine_id=m.id ORDER BY p.position) AS photo_ids,
 COALESCE((SELECT ROUND(AVG(r.score)::numeric, 1) FROM ratings r JOIN bookings b ON b.id=r.booking_id WHERE b.machine_id=m.id AND r.target_id=m.owner_id), 0) AS rating_avg,
 COALESCE((SELECT COUNT(*) FROM ratings r JOIN bookings b ON b.id=r.booking_id WHERE b.machine_id=m.id AND r.target_id=m.owner_id), 0) AS rating_count,
@@ -430,10 +431,13 @@ def create_machine(p:Machine,u=Depends(user)):
         att_json=Jsonb([a.model_dump(mode='json') for a in p.attachments])
         c.execute('INSERT INTO machines(id,owner_id,organization_id,name,category,model,description,village,location,rate,unit,mobilization,buffer_minutes,attachments,fuel_included,fuel_rate_extra,active,is_active) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,ST_SetSRID(ST_MakePoint(%s,%s),4326)::geography,%s,%s,%s,%s,%s,%s,%s,true,true)',(ident,u['id'],p.organization_id,p.name,p.category,p.model,p.description,p.village,p.longitude,p.latitude,p.rate,p.unit,p.mobilization,p.buffer_minutes,att_json,p.fuel_included,p.fuel_rate_extra))
         c.execute('UPDATE machines SET condition=%s,horsepower=%s,transport_available=%s WHERE id=%s',(p.condition,p.horsepower,p.transport_available,ident))
+        if 'operator_rate_extra' in p.model_fields_set:
+            c.execute('UPDATE machines SET operator_rate_extra=%s WHERE id=%s',(p.operator_rate_extra,ident))
         save_photos(c,ident,p.photos)
         return one(c,MACHINE_SELECT+' WHERE m.id=%s',(ident,))
 
 class MachineUpdate(BaseModel):
+    operator_rate_extra:Decimal|None=Field(default=None,ge=0,le=50000,max_digits=12,decimal_places=2)
     condition:Literal['Not specified','Excellent','Good','Needs service']|None=None
     horsepower:int|None=Field(default=None,ge=1,le=1000)
     transport_available:bool|None=None
@@ -511,6 +515,8 @@ def update_machine(ident:UUID,p:MachineUpdate,u=Depends(user)):
             c.execute('UPDATE machines SET horsepower=NULL WHERE id=%s',(ident,))
         if 'organization_id' in p.model_fields_set and p.organization_id is None:
             c.execute('UPDATE machines SET organization_id=NULL WHERE id=%s',(ident,))
+        if 'operator_rate_extra' in p.model_fields_set:
+            c.execute('UPDATE machines SET operator_rate_extra=%s WHERE id=%s',(p.operator_rate_extra,ident))
         save_photos(c,ident,p.photos)
         return one(c,MACHINE_SELECT+' WHERE m.id=%s',(ident,))
 
@@ -520,96 +526,6 @@ def machine_photo(ident:UUID,u=Depends(optional_user)):
         row=one(c,'SELECT p.image,m.active,m.is_active,m.moderated,m.owner_id FROM machine_photos p JOIN machines m ON m.id=p.machine_id WHERE p.id=%s',(ident,))
         require(row and ((row['active'] and row['is_active'] and not row['moderated']) or (u and row['owner_id']==u['id'])),'Photo not found',404)
         return Response(bytes(row['image']),media_type='image/jpeg',headers={'Content-Disposition':'inline'})
-DEMO_MACHINES = [
-    {
-        'id': '10000000-0000-4000-8000-000000000001',
-        'owner_id': '00000000-0000-4000-8000-000000000002',
-        'organization_id': None,
-        'name': 'DEMO · Mahindra 575 DI (45 HP)',
-        'category': 'Tractor',
-        'model': '575 DI',
-        'description': 'Synthetic hackathon listing. Verified with attachments & fuel options.',
-        'village': 'Ludhiana Ag Hub',
-        'rate': 650.0,
-        'unit': 'hour',
-        'mobilization': 250.0,
-        'buffer_minutes': 15,
-        'active': True,
-        'is_active': True,
-        'attachments': [
-            {'name': 'Rotavator', 'rate': 250},
-            {'name': 'Disc Harrow', 'rate': 200},
-            {'name': 'Trolley', 'rate': 150}
-        ],
-        'fuel_included': True,
-        'fuel_rate_extra': 180.0,
-        'owner_name': 'Harpreet Singh (Owner)',
-        'owner_phone': '+919000000002',
-        'latitude': 30.901,
-        'longitude': 75.857,
-        'rating_avg': 5.0,
-        'rating_count': 1,
-        'badges': ['Clean Machine', 'Experienced Driver', 'Full Tank', 'On-Time Arrival']
-    },
-    {
-        'id': '10000000-0000-4000-8000-000000000002',
-        'owner_id': '00000000-0000-4000-8000-000000000002',
-        'organization_id': None,
-        'name': 'DEMO · Shaktiman 6-foot Rotavator',
-        'category': 'Rotavator',
-        'model': '6-foot',
-        'description': 'Heavy duty rotavator for soil preparation.',
-        'village': 'Ludhiana Ag Hub',
-        'rate': 1200.0,
-        'unit': 'acre',
-        'mobilization': 0.0,
-        'buffer_minutes': 15,
-        'active': True,
-        'is_active': True,
-        'attachments': [
-            {'name': 'Laser Leveller', 'rate': 350}
-        ],
-        'fuel_included': False,
-        'fuel_rate_extra': 0.0,
-        'owner_name': 'Harpreet Singh (Owner)',
-        'owner_phone': '+919000000002',
-        'latitude': 30.912,
-        'longitude': 75.865,
-        'rating_avg': 4.8,
-        'rating_count': 3,
-        'badges': ['Sharp Blades', 'On-Time Arrival']
-    },
-    {
-        'id': '10000000-0000-4000-8000-000000000003',
-        'owner_id': '00000000-0000-4000-8000-000000000002',
-        'organization_id': None,
-        'name': 'DEMO · Preet 987 Self-Propelled Harvester',
-        'category': 'Harvester',
-        'model': '987 Deluxe',
-        'description': 'High output crop harvesting with low grain loss.',
-        'village': 'Ludhiana Ag Hub',
-        'rate': 2200.0,
-        'unit': 'acre',
-        'mobilization': 500.0,
-        'buffer_minutes': 30,
-        'active': True,
-        'is_active': True,
-        'attachments': [
-            {'name': 'Straw Reaper', 'rate': 400},
-            {'name': 'Baler Attachment', 'rate': 500}
-        ],
-        'fuel_included': True,
-        'fuel_rate_extra': 250.0,
-        'owner_name': 'Harpreet Singh (Owner)',
-        'owner_phone': '+919000000002',
-        'latitude': 30.889,
-        'longitude': 75.841,
-        'rating_avg': 4.9,
-        'rating_count': 5,
-        'badges': ['High Capacity', 'Full Tank']
-    }
-]
-
 @app.get('/api/machines')
 def machines(latitude:float=30.901,longitude:float=75.857,radius:int=5,category:str='',u=Depends(optional_user)):
     require(-90<=latitude<=90 and -180<=longitude<=180 and 1<=radius<=50,'Invalid search radius or location',422)
@@ -667,6 +583,7 @@ class SelectedAttachment(BaseModel):
     rate:Decimal=Field(ge=0,le=50000,max_digits=12,decimal_places=2)
 
 class Booking(BaseModel):
+    expected_total:Decimal|None=Field(default=None,ge=0,max_digits=18,decimal_places=2)
     group_id:UUID|None=None
     contact_phone:str|None=Field(default=None,pattern=r'^\+91[6-9]\d{9}$')
     machine_id:UUID
@@ -698,6 +615,7 @@ def quote_for(p,m):
         require(m.get('fuel_included',False),'Fuel option is unavailable',409)
         fuel_extra=Decimal(str(m['fuel_rate_extra']))
         addons_rate += fuel_extra
+    addons_rate += Decimal(str(m.get('operator_rate_extra') or 0))
     b=bill(m['rate'],quantity,m['mobilization'],addons_rate=addons_rate)
     return quantity,b,addons_rate,fuel_extra
 def renter(u=Depends(user)):
@@ -717,7 +635,7 @@ def quote(p:Booking,u=Depends(renter)):
         require(m['owner_id']!=u['id'],'You cannot book your own equipment.',403)
         require(one(c,'SELECT id FROM users WHERE id=%s AND NOT suspended',(m['owner_id'],)) is not None,'Equipment owner is currently unavailable',409)
         q,b,addons_rate,fuel_extra=quote_for(p,m)
-        return {**b,'quantity':q,'unit':m['unit'],'rate':m['rate'],'addons_rate':addons_rate,'fuel_extra':fuel_extra,'payment':'Directly to owner outside platform'}
+        return {**b,'quantity':q,'unit':m['unit'],'rate':m['rate'],'addons_rate':addons_rate,'fuel_extra':fuel_extra,'operator_rate':m.get('operator_rate_extra'),'fuel_selected':p.fuel_included,'payment':'Directly to owner outside platform'}
 @app.post('/api/bookings')
 def book(p:Booking,u=Depends(renter)):
     return create_booking(p,u)
@@ -734,8 +652,9 @@ def create_booking(p,u,assisted_by=None):
         c.execute('SELECT pg_advisory_xact_lock(hashtextextended(%s,0))',(str(u['id'])+str(p.idempotency_key),))
         existing=one(c,'SELECT * FROM bookings WHERE farmer_id=%s AND idempotency_key=%s',(u['id'],p.idempotency_key))
         if existing:
-            legacy_hash=hashlib.sha256(p.model_dump_json(exclude={'group_id'}).encode()).hexdigest()
-            legacy_match=p.group_id is None and existing.get('group_id') is None and existing['request_hash']==legacy_hash
+            legacy_hash=hashlib.sha256(p.model_dump_json(exclude={'group_id','expected_total'}).encode()).hexdigest()
+            prior_hash=hashlib.sha256(p.model_dump_json(exclude={'expected_total'}).encode()).hexdigest()
+            legacy_match=p.expected_total is None and (existing['request_hash']==prior_hash or (p.group_id is None and existing.get('group_id') is None and existing['request_hash']==legacy_hash))
             require(existing['request_hash']==req_hash or legacy_match,'Idempotency key reused with changed request',409)
             return existing
         m=one(c,'SELECT * FROM machines WHERE id=%s FOR UPDATE',(p.machine_id,))
@@ -744,6 +663,7 @@ def create_booking(p,u,assisted_by=None):
         require(m['owner_id']!=u['id'],'You cannot book your own equipment.',403)
         require(one(c,'SELECT id FROM users WHERE id=%s AND NOT suspended',(m['owner_id'],)) is not None,'Equipment owner is currently unavailable',409)
         quantity,b,addons_rate,fuel_extra=quote_for(p,m)
+        require(p.expected_total is None or p.expected_total==b['total'],'The rental price changed. Refresh the estimate before requesting.',409)
         reserved_until=p.end_at+timedelta(minutes=m['buffer_minutes'])
         blocked=one(c,"SELECT id FROM maintenance WHERE machine_id=%s AND tstzrange(start_at,end_at,'[)') && tstzrange(%s,%s,'[)')",(p.machine_id,p.start_at,reserved_until))
         require(not blocked,'Machine under maintenance during this interval',409)
@@ -752,7 +672,7 @@ def create_booking(p,u,assisted_by=None):
         row=one(c,'INSERT INTO bookings(id,machine_id,farmer_id,start_at,end_at,reserved_until,quantity,latitude,longitude,rate,unit,mobilization,estimate,idempotency_key,request_hash,selected_attachments,fuel_included,fuel_extra) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *',(ident,p.machine_id,u['id'],p.start_at,p.end_at,reserved_until,quantity,p.latitude,p.longitude,m['rate'],m['unit'],m['mobilization'],b['total'],p.idempotency_key,req_hash,sel_att_json,p.fuel_included,fuel_extra))
         if p.group_id:
             require(one(c,'SELECT 1 FROM rental_group_members WHERE group_id=%s AND user_id=%s FOR SHARE',(p.group_id,u['id'])) is not None,'Join the group before adding a rental',403)
-        row=one(c,"UPDATE bookings SET assisted_by=%s,group_id=%s,response_due_at=LEAST(start_at,now()+interval '24 hours') WHERE id=%s RETURNING *",(assisted_by,p.group_id,ident))
+        row=one(c,"UPDATE bookings SET assisted_by=%s,group_id=%s,operator_extra=%s,operator_included=%s,response_due_at=LEAST(start_at,now()+interval '24 hours') WHERE id=%s RETURNING *",(assisted_by,p.group_id,m.get('operator_rate_extra') or 0,m.get('operator_rate_extra') is not None,ident))
         if p.contact_phone:
             c.execute('INSERT INTO booking_contacts(booking_id,phone) VALUES(%s,%s)',(ident,p.contact_phone))
         audit(c,assisted_by or u['id'],ident,'BOOKING_REQUESTED',{'assisted_by':str(assisted_by) if assisted_by else None})
@@ -772,9 +692,9 @@ u.name AS farmer_name,
 NULL::text AS farmer_phone,
 ow.name AS owner_name,
 ow.phone AS owner_phone,
-COALESCE((SELECT ROUND(AVG(r.score)::numeric, 1) FROM ratings r WHERE r.target_id=b.farmer_id), 5.0) AS farmer_rating_avg,
+COALESCE((SELECT ROUND(AVG(r.score)::numeric, 1) FROM ratings r WHERE r.target_id=b.farmer_id), 0) AS farmer_rating_avg,
 COALESCE((SELECT COUNT(*) FROM ratings r WHERE r.target_id=b.farmer_id), 0) AS farmer_rating_count,
-COALESCE((SELECT ROUND(AVG(r.score)::numeric, 1) FROM ratings r WHERE r.target_id=m.owner_id), 5.0) AS owner_rating_avg,
+COALESCE((SELECT ROUND(AVG(r.score)::numeric, 1) FROM ratings r WHERE r.target_id=m.owner_id), 0) AS owner_rating_avg,
 COALESCE((SELECT COUNT(*) FROM ratings r WHERE r.target_id=m.owner_id), 0) AS owner_rating_count
 FROM bookings b
 JOIN machines m ON m.id=b.machine_id
@@ -864,6 +784,8 @@ def pending_meter(ident:UUID,u=Depends(user)):
 @app.post('/api/bookings/{ident}/meter/confirm')
 def meter_confirm(ident:UUID,p:Verify,u=Depends(user)):
     with db() as c:
+        initial=booking_access(c,ident,u)
+        one(c,'SELECT id FROM machines WHERE id=%s FOR UPDATE',(initial['machine_id'],))
         b=booking_access(c,ident,u,True)
         require(b['farmer_id']==u['id'],'Farmer must confirm the reading')
         row=consume(c,p.challenge_id,p.code,'meter',u)
@@ -887,6 +809,7 @@ def meter_confirm(ident:UUID,p:Verify,u=Depends(user)):
                     addons_rate += Decimal(str(att.get('rate', 0)))
             if b.get('fuel_included') and b.get('fuel_extra'):
                 addons_rate += Decimal(str(b['fuel_extra']))
+            addons_rate += Decimal(str(b.get('operator_extra') or 0))
             total=bill(b['rate'],quantity,b['mobilization'],addons_rate=addons_rate)['total']
             c.execute("UPDATE bookings SET meter_end=%s,actual_quantity=%s,final_total=%s,status='COMPLETED' WHERE id=%s",(data['reading'],quantity,total,ident))
         audit(c,u['id'],ident,'METER_'+data['stage'].upper()+'_CONFIRMED',data)
@@ -932,13 +855,13 @@ def machine_reviews(ident:UUID):
                           JOIN bookings b ON b.id=r.booking_id
                           JOIN machines m ON m.id=b.machine_id
                           JOIN users u ON u.id=r.author_id
-                          WHERE b.machine_id=%s AND r.target_id=m.owner_id ORDER BY r.created_at DESC LIMIT 50''',(ident,))
+                          WHERE b.machine_id=%s AND b.status='COMPLETED' AND r.author_id=b.farmer_id AND r.target_id=m.owner_id ORDER BY r.created_at DESC LIMIT 50''',(ident,))
 
 @app.get('/api/bookings/{ident}/rating')
 def get_booking_rating(ident:UUID,u=Depends(user)):
     with db() as c:
         booking_access(c,ident,u)
-        return one(c,'SELECT score,punctuality,badges,comment,created_at FROM ratings WHERE booking_id=%s AND author_id=%s',(ident,u['id']))
+        return one(c,'SELECT score,punctuality,badges,comment,created_at FROM ratings WHERE booking_id=%s AND author_id=%s',(ident,u['id'])) or {}
 
 @app.get('/api/bookings/{ident}/invoice')
 def invoice(ident:UUID,u=Depends(user)):
@@ -955,6 +878,7 @@ def invoice(ident:UUID,u=Depends(user)):
             addons_rate += Decimal(str(att.get('rate', 0)))
         fuel_extra=Decimal(str(b.get('fuel_extra', 0))) if b.get('fuel_included') else Decimal('0')
         addons_rate += fuel_extra
+        addons_rate += Decimal(str(b.get('operator_extra') or 0))
         
         breakdown=bill(b['rate'],b['actual_quantity'],b['mobilization'],addons_rate=addons_rate)
         return {
@@ -973,6 +897,8 @@ def invoice(ident:UUID,u=Depends(user)):
                 'selected_attachments':att_list,
                 'fuel_included':b.get('fuel_included',False),
                 'fuel_extra':str(fuel_extra),
+                'operator_extra':str(b.get('operator_extra') or 0),
+                'operator_included':b.get('operator_included',False),
             },
             'payment_status':b['payment_status'],
             'notice':'Rental bill for agricultural machinery sharing. Payment status is manually reported outside the platform and not independently verified. No platform commission or escrow fee.'
@@ -1082,3 +1008,5 @@ async def invalid(request,exc):
 
 from app.operations import register
 register(app,sys.modules[__name__])
+from app.rescheduling import register as register_rescheduling
+register_rescheduling(app,sys.modules[__name__])

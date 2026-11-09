@@ -2,6 +2,14 @@
 
 No paid service is enabled. Checked official public documentation on 30 October 2026. Pricing/eligibility can change and must be rechecked at signup.
 
+## Village suggestions — 8 November 2026
+
+The shared village picker now combines the bundled list with Photon/OpenStreetMap search-as-you-type results. It waits 600 ms after typing at least three characters, limits results, filters to India, cancels stale requests and caches up to 100 searches for five minutes. Selected labels and coordinates survive a session refresh. Provider failures show a retry message rather than claiming the village does not exist. Village names are sent to Photon; no account, API key or paid Google Maps integration is used.
+
+Photon's public demo permits reasonable use but offers no availability guarantee and can throttle heavy use. It does not have identical coverage to Google Maps. For larger traffic, configure a suitable hosted/self-hosted geocoder before scaling. Source: https://github.com/komoot/photon
+
+Verified locally: Parta, Tohana, Haryana and Parta, Nubra, Ladakh appear as separate suggestions. Four Node tests cover valid coordinates/country filtering, malformed responses, caching and retry. Homepage controls were measured at identical top positions and 60 px height; frontend production build passed.
+
 ## SMS/OTP findings
 
 | Option | What official documentation establishes | Current decision |

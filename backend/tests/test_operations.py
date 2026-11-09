@@ -133,7 +133,7 @@ def test_prices_cannot_be_changed_by_client_and_reminders_can_be_disabled(pilot)
     result=farmer.post('/api/bookings',json=p);assert result.status_code==200,result.text
     ident=result.json()['id'];assert float(result.json()['estimate'])==1500
     # A client retry across the migration must still find its pre-group booking.
-    legacy_hash=main.hashlib.sha256(main.Booking(**p).model_dump_json(exclude={'group_id'}).encode()).hexdigest()
+    legacy_hash=main.hashlib.sha256(main.Booking(**p).model_dump_json(exclude={'group_id','expected_total'}).encode()).hexdigest()
     with db() as c:c.execute('UPDATE bookings SET request_hash=%s WHERE id=%s',(legacy_hash,ident))
     assert farmer.post('/api/bookings',json=p).json()['id']==ident
     assert farmer.post('/api/bookings',json={**p,'longitude':77}).status_code==409

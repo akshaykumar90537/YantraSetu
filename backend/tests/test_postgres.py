@@ -421,7 +421,7 @@ def test_mutual_rating_and_booking_fields(database, monkeypatch, mailbox):
     target_b = next(b for b in owner_bookings if b['id'] == booking_id)
     assert 'farmer_rating_avg' in target_b
     assert 'farmer_rating_count' in target_b
-    assert target_b['farmer_rating_avg'] == 5.0
+    assert target_b['farmer_rating_avg'] == 0
     assert target_b['farmer_rating_count'] == 0
 
     # Owner approves booking
@@ -433,10 +433,21 @@ def test_mutual_rating_and_booking_fields(database, monkeypatch, mailbox):
     assert any(r['start_at'] is not None for r in avail['reserved'])
 
     # Directly set to COMPLETED for rating test
+    # A request/accepted rental is not yet a completed rental and cannot be rated.
+    assert farmer_client.post(f'/api/bookings/{booking_id}/rating',json={'score':5}).status_code==403
+    stranger_client=TestClient(main.app,headers=headers)
+    sign_in(stranger_client,'rating-stranger@example.test',mailbox,name='Other farmer',roles=['farmer'])
+    operator_client=TestClient(main.app,headers=headers)
+    sign_in(operator_client,'919000000003@example.test',mailbox)
     with connect() as c:
-        c.execute("UPDATE bookings SET status='COMPLETED', actual_quantity=2, final_total=1300 WHERE id=%s", (booking_id,))
+        c.execute("UPDATE bookings SET status='COMPLETED', actual_quantity=2, final_total=1300,operator_id=%s WHERE id=%s", (operator,booking_id))
+    assert stranger_client.post(f'/api/bookings/{booking_id}/rating',json={'score':1}).status_code==403
+    assert operator_client.post(f'/api/bookings/{booking_id}/rating',json={'score':1}).status_code==403
+    assert farmer_client.post(f'/api/bookings/{booking_id}/rating',json={'score':6}).status_code==422
 
     # Farmer rates Owner
+    empty_review=farmer_client.get(f'/api/bookings/{booking_id}/rating')
+    assert empty_review.status_code==200 and empty_review.json()=={}
     f_rate = farmer_client.post(f'/api/bookings/{booking_id}/rating', json={
         'score': 5,
         'punctuality': 5,
@@ -461,5 +472,18 @@ def test_mutual_rating_and_booking_fields(database, monkeypatch, mailbox):
     assert ub['farmer_rating_count'] == 1
     assert ub['owner_rating_avg'] == 5.0
     assert ub['owner_rating_count'] == 1
+
+    # Editing a review must retain one record, target the actual owner, and update discovery.
+    update={'score':3,'punctuality':4,'badges':['Fair Billing'],'comment':'Updated after checking the invoice'}
+    assert farmer_client.post(f'/api/bookings/{booking_id}/rating',json=update).status_code==200
+    assert farmer_client.get(f'/api/bookings/{booking_id}/rating').json()['comment']==update['comment']
+    with connect() as c:
+        records=c.execute('SELECT target_id,score FROM ratings WHERE booking_id=%s AND author_id=%s',(booking_id,farmer)).fetchall()
+        assert records==[(owner,3)]
+    reviews=farmer_client.get(f'/api/machines/{machine}/reviews').json()
+    assert len(reviews)==1 and reviews[0]['score']==3
+    listings=farmer_client.get('/api/machines?latitude=30&longitude=75&radius=5').json()
+    listing=next(m for m in listings if m['id']==str(machine))
+    assert float(listing['rating_avg'])==3 and listing['rating_count']==1
 
 

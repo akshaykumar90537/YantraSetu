@@ -41,7 +41,7 @@ export function Invoice({ data, lang = 'en' }) {
       {/* Action Bar (hidden in print) */}
       <div className="no-print" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
         <span style={{ fontSize: '13px', fontWeight: '600', color: '#166534', display: 'flex', alignItems: 'center', gap: '5px' }}>
-          <ShieldCheck size={16} /> Verified Rental Settlement Record
+          <ShieldCheck size={16} /> Rental Invoice · Payment Reported Manually
         </span>
         <button
           type="button"
@@ -151,16 +151,16 @@ export function Invoice({ data, lang = 'en' }) {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px', textAlign: 'center' }}>
             <div style={{ background: '#fff', padding: '8px', borderRadius: '6px', border: '1px solid #dcfce7' }}>
               <small style={{ color: '#64748b', fontSize: '11px', display: 'block' }}>Initial Meter</small>
-              <strong style={{ fontSize: '14px', color: '#1e293b' }}>{b.meter_start ? `${b.meter_start} hrs` : 'N/A'}</strong>
+              <strong style={{ fontSize: '14px', color: '#1e293b' }}>{b.meter_start != null ? `${b.meter_start} hrs` : 'N/A'}</strong>
             </div>
             <div style={{ background: '#fff', padding: '8px', borderRadius: '6px', border: '1px solid #dcfce7' }}>
               <small style={{ color: '#64748b', fontSize: '11px', display: 'block' }}>Final Meter</small>
-              <strong style={{ fontSize: '14px', color: '#1e293b' }}>{b.meter_end ? `${b.meter_end} hrs` : 'N/A'}</strong>
+              <strong style={{ fontSize: '14px', color: '#1e293b' }}>{b.meter_end != null ? `${b.meter_end} hrs` : 'N/A'}</strong>
             </div>
             <div style={{ background: '#fff', padding: '8px', borderRadius: '6px', border: '1px solid #dcfce7' }}>
               <small style={{ color: '#64748b', fontSize: '11px', display: 'block' }}>Net Work Billed</small>
               <strong style={{ fontSize: '14px', color: '#15803d' }}>
-                {b.actual_quantity || b.quantity} {b.unit === 'hour' ? t('perHour') : t('perAcre')}
+                {b.actual_quantity ?? b.quantity} {b.unit === 'hour' ? t('perHour') : t('perAcre')}
               </strong>
             </div>
           </div>
@@ -183,7 +183,7 @@ export function Invoice({ data, lang = 'en' }) {
                 <div style={{ fontSize: '11px', color: '#64748b' }}>Base machine rental ({b.machine_category || 'Tractor'})</div>
               </td>
               <td style={{ padding: '10px', textAlign: 'center' }}>{INR(b.rate)}/{b.unit}</td>
-              <td style={{ padding: '10px', textAlign: 'center' }}>{b.actual_quantity || b.quantity}</td>
+              <td style={{ padding: '10px', textAlign: 'center' }}>{b.actual_quantity ?? b.quantity}</td>
               <td style={{ padding: '10px', textAlign: 'right', fontWeight: '600' }}>
                 {INR(breakdown.base_rental || breakdown.rental)}
               </td>
@@ -199,31 +199,37 @@ export function Invoice({ data, lang = 'en' }) {
                   <div style={{ fontSize: '11px', color: '#64748b' }}>Selected implement add-on</div>
                 </td>
                 <td style={{ padding: '10px', textAlign: 'center' }}>+{INR(att.rate)}/{b.unit}</td>
-                <td style={{ padding: '10px', textAlign: 'center' }}>{b.actual_quantity || b.quantity}</td>
+                <td style={{ padding: '10px', textAlign: 'center' }}>{b.actual_quantity ?? b.quantity}</td>
                 <td style={{ padding: '10px', textAlign: 'right', fontWeight: '600' }}>
-                  +{INR(Number(att.rate) * Number(b.actual_quantity || b.quantity))}
+                  +{INR(Number(att.rate) * Number(b.actual_quantity ?? b.quantity))}
                 </td>
               </tr>
             ))}
 
             {/* Fuel option if selected */}
-            {(breakdown.fuel_included || b.fuel_included) && Number(b.fuel_extra || breakdown.fuel_extra) > 0 && (
+            {(breakdown.fuel_included || b.fuel_included) && (
               <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
                 <td style={{ padding: '10px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontWeight: '600' }}>
                     <Fuel size={13} color="#d97706" /> Fuel (Diesel) Provided by Owner
                   </div>
-                  <div style={{ fontSize: '11px', color: '#64748b' }}>Full tank diesel service</div>
+                  <div style={{ fontSize: '11px', color: '#64748b' }}>Fuel supplied under the agreed rental terms</div>
                 </td>
-                <td style={{ padding: '10px', textAlign: 'center' }}>+{INR(b.fuel_extra || breakdown.fuel_extra)}/hr</td>
-                <td style={{ padding: '10px', textAlign: 'center' }}>{b.actual_quantity || b.quantity}</td>
+                <td style={{ padding: '10px', textAlign: 'center' }}>+{INR(b.fuel_extra || breakdown.fuel_extra)}/{b.unit}</td>
+                <td style={{ padding: '10px', textAlign: 'center' }}>{b.actual_quantity ?? b.quantity}</td>
                 <td style={{ padding: '10px', textAlign: 'right', fontWeight: '600' }}>
-                  +{INR(Number(b.fuel_extra || breakdown.fuel_extra) * Number(b.actual_quantity || b.quantity))}
+                  +{INR(Number(b.fuel_extra || breakdown.fuel_extra) * Number(b.actual_quantity ?? b.quantity))}
                 </td>
               </tr>
             )}
 
             {/* Mobilization */}
+            {b.operator_included && <tr>
+              <td>Operator service</td>
+              <td>{INR(b.operator_extra)} / {b.unit}</td>
+              <td>{b.actual_quantity}</td>
+              <td>{INR(Number(b.operator_extra) * Number(b.actual_quantity))}</td>
+            </tr>}
             <tr style={{ borderBottom: '1px solid #e2e8f0' }}>
               <td style={{ padding: '10px' }}>
                 <strong>Mobilization / Machine Dispatch</strong>
@@ -242,7 +248,7 @@ export function Invoice({ data, lang = 'en' }) {
                 Total Payable (ਕੁੱਲ ਰਕਮ):
               </td>
               <td style={{ padding: '12px 10px', textAlign: 'right', color: '#15803d' }}>
-                {INR(breakdown.total || b.final_total || b.estimate)}
+                {INR(breakdown.total ?? b.final_total ?? b.estimate)}
               </td>
             </tr>
           </tbody>

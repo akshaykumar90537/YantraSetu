@@ -35,7 +35,7 @@ export function BookingForm({ machine: m, online, busy, run, onDone, lang = 'en'
 
   const t = (k, p) => translate(lang, k, p);
   const offeredAttachments = Array.isArray(m?.attachments) ? m.attachments : [];
-  const hasFuelOption = Boolean(m?.fuel_included && Number(m?.fuel_rate_extra) > 0);
+  const hasFuelOption = Boolean(m?.fuel_included);
 
   const now = new Date();
   const pad = (n) => String(n).padStart(2, '0');
@@ -77,6 +77,7 @@ export function BookingForm({ machine: m, online, busy, run, onDone, lang = 'en'
     if (fuel && m.fuel_rate_extra) {
       addons_rate += Number(m.fuel_rate_extra || 0);
     }
+    addons_rate += Number(m.operator_rate_extra || 0);
     const addons = Math.round(quantity * addons_rate * 100) / 100;
     const mobilization = Number(m.mobilization || 0);
     const total = Math.round((base_rental + addons + mobilization) * 100) / 100;
@@ -91,6 +92,9 @@ export function BookingForm({ machine: m, online, busy, run, onDone, lang = 'en'
       quantity,
       unit: m.unit,
       rate,
+      operator_rate: m.operator_rate_extra,
+      fuel_extra: fuel ? Number(m.fuel_rate_extra || 0) : 0,
+      fuel_selected: fuel,
       payment: 'Directly to owner outside platform',
     };
   }
@@ -98,10 +102,8 @@ export function BookingForm({ machine: m, online, busy, run, onDone, lang = 'en'
   // Automatically recalculate estimate whenever dates, acreage, attachments, or fuel change
   useEffect(() => {
     const est = calculateLiveEstimate(startVal, endVal, acresVal, selectedAttachments, fuelIncluded);
-    if (est) {
-      setQuote(est);
-    }
-  }, [startVal, endVal, acresVal, selectedAttachments, fuelIncluded, m.rate, m.mobilization, m.fuel_rate_extra, m.unit]);
+    setQuote(est);
+  }, [startVal, endVal, acresVal, selectedAttachments, fuelIncluded, m.rate, m.mobilization, m.fuel_rate_extra, m.operator_rate_extra, m.unit]);
 
   useEffect(() => {
     api('/machines/' + m.id + '/availability')
@@ -171,7 +173,10 @@ export function BookingForm({ machine: m, online, busy, run, onDone, lang = 'en'
         onSubmit={(e) => {
           e.preventDefault();
           const d = payload(e.target);
-          run(async () => onDone(d, !online));
+          run(async () => {
+            if(online){const verified=await api(assistedFarmerId?'/assisted-quote':'/quote',{...d,...(assistedFarmerId?{farmer_id:assistedFarmerId}:{})});if(Number(verified.total)!==Number(quote?.total)){setQuote(verified);throw new Error('The estimate changed. Review the updated amount and submit again.');}d.expected_total=verified.total;}
+            return onDone(d,!online);
+          });
         }}
       >
         {!assistedFarmerId&&<FormField label="Rental group (optional)"><select name="group_id"><option value="">Individual rental</option>{groups.map(g=><option key={g.id} value={g.id}>{g.name}</option>)}</select>{groupError&&<p role="alert">Could not load groups: {groupError}</p>}</FormField>}
@@ -354,12 +359,9 @@ export function BookingForm({ machine: m, online, busy, run, onDone, lang = 'en'
               <span>{t('itemizedBaseRental')}:</span>
               <b>{INR(quote.base_rental || quote.rental)}</b>
             </div>
-            {quote.addons && Number(quote.addons) > 0 && (
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px', fontSize: '13px', color: '#059669' }}>
-                <span>{t('itemizedAttachments')} & Fuel:</span>
-                <b>+{INR(quote.addons)}</b>
-              </div>
-            )}
+            <div><span>Attachments:</span> <b>{INR(Math.max(0, Number(quote.addons)-Number(quote.quantity)*(Number(quote.fuel_extra||0)+Number(quote.operator_rate||0))))}</b></div>
+            <div><span>Fuel:</span> <b>{quote.fuel_selected ? INR(Number(quote.quantity)*Number(quote.fuel_extra||0)) : 'Not supplied in this estimate'}</b></div>
+            <div><span>Operator:</span> <b>{quote.operator_rate == null ? 'Not specified—arrange separately' : Number(quote.operator_rate)===0 ? 'Included in rental rate' : INR(Number(quote.quantity)*Number(quote.operator_rate))}</b></div>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px', fontSize: '13px' }}>
               <span>{t('mobilizationLabel')}:</span>
               <b>{INR(quote.mobilization)}</b>
@@ -389,6 +391,7 @@ export function BookingForm({ machine: m, online, busy, run, onDone, lang = 'en'
           </div>
         )}
 
+        {m.operator_rate_extra == null&&<label><input type="checkbox" required/>I understand that no operator charge is included in this estimate and I must arrange an operator separately.</label>}
         <p>{t('approvalPayment')}</p>
         <div className="actions">
           {online && (

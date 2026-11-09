@@ -1,3 +1,4 @@
+import { EquipmentReviews } from './EquipmentReviews';
 import React, { useEffect, useState } from 'react';
 import { getDistanceKm } from '../data/villages';
 import { INR, translate } from '../locales';
@@ -46,6 +47,7 @@ function Listing({ machine, lang, onEstimate, onRequest }) {
         <button className="ys-btn ys-btn-lime" onClick={() => onRequest(machine)}>{t('requestSlot')}</button>
       </> : t('noSlot'))}
     </div>
+    <EquipmentReviews machine={machine}/>
   </article>;
 }
 

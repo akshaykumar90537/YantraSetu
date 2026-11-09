@@ -8,14 +8,14 @@ import { INR, translate } from '../locales';
 import { searchLocalVillages, searchOnlineVillages, findNearestVillage } from '../data/villages';
 
 const PRESET_ATTACHMENTS = [
-  { name: 'Rotavator', defaultRate: 250 },
-  { name: 'Disc Harrow', defaultRate: 200 },
-  { name: 'Cultivator', defaultRate: 150 },
-  { name: 'Trolley', defaultRate: 150 },
-  { name: 'Laser Leveller', defaultRate: 350 },
-  { name: 'Seed Drill', defaultRate: 200 },
-  { name: 'Straw Reaper', defaultRate: 400 },
-  { name: 'Baler', defaultRate: 500 },
+  { name: 'Rotavator', defaultRate: '' },
+  { name: 'Disc Harrow', defaultRate: '' },
+  { name: 'Cultivator', defaultRate: '' },
+  { name: 'Trolley', defaultRate: '' },
+  { name: 'Laser Leveller', defaultRate: '' },
+  { name: 'Seed Drill', defaultRate: '' },
+  { name: 'Straw Reaper', defaultRate: '' },
+  { name: 'Baler', defaultRate: '' },
 ];
 
 export function MachineForm({ orgs = [], busy, onSubmit, initialData = null, lang = 'en' }) {
@@ -33,6 +33,7 @@ export function MachineForm({ orgs = [], busy, onSubmit, initialData = null, lan
   const [model, setModel] = useState(initialData?.model || '');
   const [category, setCategory] = useState(initialData?.category || 'Tractor');
   const [village, setVillage] = useState(initialData?.village || '');
+  const [operatorRate,setOperatorRate]=useState(initialData?.operator_rate_extra ?? '');
   const [rate, setRate] = useState(initialData?.rate ?? '');
   const [unit, setUnit] = useState(initialData?.unit || 'hour');
   const [mobilization, setMobilization] = useState(initialData?.mobilization ?? 0);
@@ -52,7 +53,7 @@ export function MachineForm({ orgs = [], busy, onSubmit, initialData = null, lan
     Array.isArray(initialData?.attachments) ? initialData.attachments : []
   );
   const [fuelIncluded, setFuelIncluded] = useState(Boolean(initialData?.fuel_included));
-  const [fuelRateExtra, setFuelRateExtra] = useState(initialData?.fuel_rate_extra ?? 180);
+  const [fuelRateExtra, setFuelRateExtra] = useState(initialData?.fuel_rate_extra ?? '');
   const [customAttName, setCustomAttName] = useState('');
   const [customAttRate, setCustomAttRate] = useState('');
 
@@ -207,7 +208,7 @@ export function MachineForm({ orgs = [], busy, onSubmit, initialData = null, lan
 
   function updateAttachmentRate(index, newRate) {
     const updated = [...attachments];
-    updated[index].rate = Number(newRate) || 0;
+    updated[index].rate = newRate === '' ? '' : Number(newRate);
     setAttachments(updated);
   }
 
@@ -235,6 +236,7 @@ export function MachineForm({ orgs = [], busy, onSubmit, initialData = null, lan
             buffer_minutes: Number(buffer),
             organization_id: orgId || null,
             attachments,
+            operator_rate_extra: operatorRate === '' ? null : Number(operatorRate),
             fuel_included: fuelIncluded,
             fuel_rate_extra: fuelIncluded ? Number(fuelRateExtra) : 0,
           });
@@ -492,6 +494,8 @@ export function MachineForm({ orgs = [], busy, onSubmit, initialData = null, lan
           </FormField>
         </div>
 
+        <FormField label={`Operator charge per ${unit} (blank = not supplied, 0 = included)`}><input type="number" min="0" max="50000" step="0.01" value={operatorRate} onChange={e=>setOperatorRate(e.target.value)}/></FormField>
+        <p>Enter your actual prices. Operator charges, when specified, are included in every rental estimate for this listing.</p>
         <fieldset><legend>Equipment photos and condition</legend>
           <p>Upload up to 3 actual equipment photos, each under 1 MB. JPEG, PNG or WebP. Photos are public; avoid people, documents and phone numbers.</p>
           {initialData && photos === null && <EquipmentPhotos lang={lang} machine={initialData} />}
@@ -648,7 +652,7 @@ export function MachineForm({ orgs = [], busy, onSubmit, initialData = null, lan
                     fontWeight: '500',
                   }}
                 >
-                  +{preset.name} (+₹{preset.defaultRate})
+                  +{preset.name} (set your rate)
                 </button>
               );
             })}
@@ -676,7 +680,8 @@ export function MachineForm({ orgs = [], busy, onSubmit, initialData = null, lan
                     <input
                       type="number"
                       min="0"
-                      step="10"
+                      step="0.01"
+                      required
                       value={att.rate}
                       onChange={(e) => updateAttachmentRate(idx, e.target.value)}
                       style={{ width: '80px', padding: '4px 6px', fontSize: '12px', borderRadius: '4px', border: '1px solid #cbd5e1' }}
@@ -753,12 +758,13 @@ export function MachineForm({ orgs = [], busy, onSubmit, initialData = null, lan
               <input
                 type="number"
                 min="0"
-                step="10"
+                step="0.01"
+                required
                 value={fuelRateExtra}
                 onChange={(e) => setFuelRateExtra(e.target.value)}
                 style={{ width: '100px', padding: '4px 8px', fontSize: '12px', borderRadius: '6px', border: '1px solid #fde047' }}
               />
-              <span style={{ fontSize: '12px', color: '#713f12' }}>₹ / hour</span>
+              <span style={{ fontSize: '12px', color: '#713f12' }}>₹ / {unit}</span>
             </div>
           )}
         </div>
