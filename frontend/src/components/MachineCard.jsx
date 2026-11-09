@@ -1,3 +1,4 @@
+import {ReportListing} from './CommunityHelp';
 import { EquipmentReviews } from './EquipmentReviews';
 import { localizeOperations } from '../locales/operations';
 import React, { useState } from 'react';
@@ -141,6 +142,7 @@ export function MachineCard({ machine: m, index, onBook, canSave = false, lang =
           {t('mobilizationLabel')}: {INR(m.mobilization)} · {m.buffer_minutes} {t('bufferMinutes')}
         </small>
       </div>
+      <ReportListing machineId={m.id}/>
       <EquipmentReviews machine={m}/>
     </article>
   ,lang);

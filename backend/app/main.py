@@ -350,6 +350,40 @@ def verify(p:LoginVerify,response:Response):
 
 @app.get('/api/me')
 def me(u=Depends(user)): return u
+class ProfileUpdate(BaseModel):
+    photo:str|None=Field(default=None,max_length=1400000)
+    model_config={'extra':'forbid'}
+    name:str=Field(min_length=2,max_length=80)
+    language:Literal['en','hi','pa']
+    @field_validator('name')
+    @classmethod
+    def clean_profile_name(cls,value):
+        value=value.strip()
+        if len(value)<2: raise ValueError('Enter at least two characters')
+        return value
+@app.patch('/api/me')
+def update_profile(p:ProfileUpdate,u=Depends(user)):
+    image=normalize_photo(p.photo) if p.photo is not None else None
+    with db() as c:
+        if 'photo' in p.model_fields_set:
+            if image is None:
+                c.execute('DELETE FROM profile_photos WHERE user_id=%s',(u['id'],))
+                c.execute('UPDATE users SET profile_photo_version=NULL WHERE id=%s',(u['id'],))
+            else:
+                c.execute('INSERT INTO profile_photos(user_id,image) VALUES(%s,%s) ON CONFLICT(user_id) DO UPDATE SET image=EXCLUDED.image,updated_at=now()',(u['id'],image))
+                c.execute('UPDATE users SET profile_photo_version=%s WHERE id=%s',(uid(),u['id']))
+        updated=one(c,'UPDATE users SET name=%s,language=%s WHERE id=%s RETURNING id,name,email,phone,roles,language,profile_photo_version',(p.name,p.language,u['id']))
+        require(updated is not None,'Account not found',404)
+        audit(c,u['id'],None,'PROFILE_UPDATED',{'fields':['name','language']+(['photo'] if 'photo' in p.model_fields_set else [])})
+        return updated
+
+@app.get('/api/me/photo')
+def profile_photo(u=Depends(user)):
+    with db() as c:
+        photo=one(c,'SELECT image FROM profile_photos WHERE user_id=%s',(u['id'],))
+        require(photo is not None,'No profile photo',404)
+        return Response(bytes(photo['image']),media_type='image/jpeg')
+
 @app.post('/api/auth/logout')
 def logout(request:Request,response:Response):
     token = request.cookies.get('ys_session','')

@@ -30,6 +30,12 @@ class Demand(OperationInput):
     category:Literal['Tractor','Rotavator','Harvester','Seed drill','Sprayer','Cultivator']
     needed_at:AwareDatetime
     notes:str=Field(default='',max_length=500)
+class SupportMessage(OperationInput):
+    body:str=Field(min_length=3,max_length=2000)
+class ContentReport(OperationInput):
+    machine_id:UUID
+    reason:Literal['SCAM','MISLEADING','UNSAFE','ABUSIVE','OTHER']
+    description:str=Field(min_length=10,max_length=2000)
 class Delegation(OperationInput):
     coordinator_id:UUID
 class Group(OperationInput):
@@ -120,7 +126,7 @@ def register(app,m):
 
     @app.get('/api/support')
     def my_cases(u=Depends(m.user)):
-        with db() as c:return many(c,'SELECT * FROM support_cases WHERE reporter_id=%s ORDER BY created_at DESC LIMIT 100',(u['id'],))
+        with db() as c:return many(c,'SELECT s.*,m.name AS machine_name FROM support_cases s JOIN bookings b ON b.id=s.booking_id JOIN machines m ON m.id=b.machine_id WHERE reporter_id=%s ORDER BY updated_at DESC LIMIT 100',(u['id'],))
 
     @app.get('/api/admin/support')
     def cases(u=Depends(admin)):
@@ -131,8 +137,66 @@ def register(app,m):
         with db() as c:
             row=one(c,'UPDATE support_cases SET status=%s,resolution=%s,updated_at=now() WHERE id=%s RETURNING *',(p.status,p.resolution,ident))
             require(row is not None,'Case not found',404)
+            c.execute('INSERT INTO support_messages(id,case_id,author_id,is_staff,body,status) VALUES(%s,%s,%s,true,%s,%s)',(m.uid(),ident,u['id'],p.resolution,p.status))
             m.audit(c,u['id'],row['booking_id'],'SUPPORT_UPDATED',{'case_id':str(ident),'status':p.status})
             m.notify(c,row['reporter_id'],f'Support case {ident}: {p.status}. View Support for details.')
+            return row
+
+    def case_access(c,ident,u,lock=False):
+        row=one(c,'SELECT * FROM support_cases WHERE id=%s'+(' FOR UPDATE' if lock else ''),(ident,))
+        require(row is not None,'Case not found',404)
+        require(row['reporter_id']==u['id'] or str(u['id']) in staff_ids(),'This support case is private',403)
+        return row
+
+    @app.get('/api/support/{ident}/messages')
+    def messages(ident:UUID,u=Depends(m.user)):
+        with db() as c:
+            case_access(c,ident,u)
+            return many(c,'SELECT id,is_staff,body,status,created_at FROM support_messages WHERE case_id=%s ORDER BY created_at,id',(ident,))
+
+    @app.post('/api/support/{ident}/messages')
+    def reply(ident:UUID,p:SupportMessage,u=Depends(m.user)):
+        with db() as c:
+            case=case_access(c,ident,u,True)
+            require(case['status']!='RESOLVED','This case is resolved. Staff must reopen it before further replies.',409)
+            m.throttle(c,'support-reply:'+str(u['id']),20,3600)
+            staff=str(u['id']) in staff_ids()
+            row=one(c,'INSERT INTO support_messages(id,case_id,author_id,is_staff,body) VALUES(%s,%s,%s,%s,%s) RETURNING id,is_staff,body,created_at',(m.uid(),ident,u['id'],staff,p.body))
+            c.execute('UPDATE support_cases SET updated_at=now() WHERE id=%s',(ident,))
+            if staff:m.notify(c,case['reporter_id'],f'Support case {ident}: new staff reply.')
+            m.audit(c,u['id'],case['booking_id'],'SUPPORT_REPLY',{'case_id':str(ident)})
+            return row
+
+    @app.post('/api/content-reports')
+    def report_content(p:ContentReport,u=Depends(m.user)):
+        with db() as c:
+            m.throttle(c,'content-report:'+str(u['id']),10,3600)
+            require(one(c,'SELECT id FROM machines WHERE id=%s',(p.machine_id,)) is not None,'Listing not found',404)
+            require(not one(c,"SELECT id FROM content_reports WHERE reporter_id=%s AND machine_id=%s AND status!='RESOLVED'",(u['id'],p.machine_id)),'You already have an open report for this listing',409)
+            row=one(c,'INSERT INTO content_reports(id,reporter_id,machine_id,reason,description) VALUES(%s,%s,%s,%s,%s) RETURNING *',(m.uid(),u['id'],p.machine_id,p.reason,p.description))
+            m.audit(c,u['id'],None,'CONTENT_REPORTED',{'report_id':str(row['id']),'machine_id':str(p.machine_id)})
+            return row
+
+    @app.get('/api/content-reports')
+    def my_reports(u=Depends(m.user)):
+        with db() as c:return many(c,'SELECT r.*,m.name AS machine_name FROM content_reports r JOIN machines m ON m.id=r.machine_id WHERE reporter_id=%s ORDER BY updated_at DESC LIMIT 100',(u['id'],))
+
+    @app.get('/api/admin/content-reports')
+    def all_reports(u=Depends(admin)):
+        with db() as c:return many(c,'SELECT r.*,m.name AS machine_name FROM content_reports r JOIN machines m ON m.id=r.machine_id ORDER BY updated_at DESC LIMIT 200')
+
+    @app.post('/api/admin/content-reports/{ident}')
+    def resolve_report(ident:UUID,p:Resolution,u=Depends(admin)):
+        with db() as c:
+            current=one(c,'SELECT * FROM content_reports WHERE id=%s',(ident,))
+            require(current is not None,'Report not found',404)
+            c.execute('SELECT pg_advisory_xact_lock(hashtextextended(%s,0))',('content-report:'+str(current['reporter_id']),))
+            if p.status!='RESOLVED':
+                require(not one(c,"SELECT id FROM content_reports WHERE reporter_id=%s AND machine_id=%s AND id!=%s AND status!='RESOLVED'",(current['reporter_id'],current['machine_id'],ident)),'Another report for this listing is already open',409)
+            row=one(c,'UPDATE content_reports SET status=%s,resolution=%s,updated_at=now() WHERE id=%s RETURNING *',(p.status,p.resolution,ident))
+            require(row is not None,'Report not found',404)
+            m.audit(c,u['id'],None,'CONTENT_REPORT_UPDATED',{'report_id':str(ident),**p.model_dump()})
+            m.notify(c,row['reporter_id'],f'Listing report {ident}: {p.status}. View Community & support.')
             return row
 
     @app.post('/api/admin/machines/{ident}')
@@ -169,7 +233,7 @@ def register(app,m):
 
     @app.post('/api/demand/{ident}/close')
     def close_demand(ident:UUID,u=Depends(m.user)):
-        with db() as c:c.execute("UPDATE equipment_demand SET status='CLOSED' WHERE id=%s AND farmer_id=%s",(ident,u['id']))
+        with db() as c:require(one(c,"UPDATE equipment_demand SET status='CLOSED' WHERE id=%s AND farmer_id=%s RETURNING id",(ident,u['id'])) is not None,'Request not found or not yours',404)
         return {'ok':True}
 
     @app.post('/api/delegations')

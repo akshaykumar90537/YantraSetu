@@ -1,3 +1,5 @@
+import {ProfileAvatar} from './components/ProfileAvatar';
+import { ProfileForm } from './components/ProfileForm';
 import React, { useState, useEffect, useRef } from 'react';
 import {
   Sprout,
@@ -320,11 +322,14 @@ function Workspace({ entry, initialUser, onLogout, sharedLang, setSharedLang }) 
         <div className="sidebar-header">
           <a
             className="brand"
-            href="#"
+            href="#dashboard"
+            aria-label="Go to dashboard"
             onClick={(e) => {
               e.preventDefault();
               setTab('dashboard');
-              if (window.innerWidth <= 760) setSidebarOpen(false);
+              setError('');
+              setModal(null);
+              if (window.innerWidth <= 1024) setSidebarOpen(false);
             }}
           >
             <img src="/icon.svg" width="40" height="40" alt="" style={{ flexShrink: 0 }} />
@@ -373,11 +378,13 @@ function Workspace({ entry, initialUser, onLogout, sharedLang, setSharedLang }) 
         <div className="account">
           {u ? (
             <>
-              <div className="avatar">{u.name.charAt(0)}</div>
+              <button type="button" className="account-profile" aria-label="Manage profile" onClick={()=>{setModal({type:'profile'});if(window.innerWidth<=1024)setSidebarOpen(false);}}>
+              <span className="avatar"><ProfileAvatar user={u}/></span>
               <div>
                 <strong>{u.name}</strong>
                 <small>{u.roles.map((r) => t('role' + r.charAt(0).toUpperCase() + r.slice(1)) || r).join(' · ')}</small>
               </div>
+              </button>
               <button
                 aria-label={t('signOut')}
                 className="icon"
@@ -989,6 +996,7 @@ function Workspace({ entry, initialUser, onLogout, sharedLang, setSharedLang }) 
               </div>
             )}
 
+            {modal.type === 'profile' && <ProfileForm user={u} onSaved={updated=>{setUser({...u,...updated});setLang(updated.language);}}/>}
             {modal.type === 'login' && (
               <LoginForm
                 busy={busy}
