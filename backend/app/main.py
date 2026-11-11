@@ -561,16 +561,22 @@ def machine_photo(ident:UUID,u=Depends(optional_user)):
         require(row and ((row['active'] and row['is_active'] and not row['moderated']) or (u and row['owner_id']==u['id'])),'Photo not found',404)
         return Response(bytes(row['image']),media_type='image/jpeg',headers={'Content-Disposition':'inline'})
 @app.get('/api/machines')
-def machines(latitude:float=30.901,longitude:float=75.857,radius:int=5,category:str='',u=Depends(optional_user)):
+def machines(latitude:float=30.901,longitude:float=75.857,radius:int=5,category:str='',locality:str|None=None,u=Depends(optional_user)):
     require(-90<=latitude<=90 and -180<=longitude<=180 and 1<=radius<=50,'Invalid search radius or location',422)
     with db() as c:
         expire_pending(c)
         owner_filter = " AND m.owner_id != %s" if u else ""
+        locality_filter=""
         params = [category, category, longitude, latitude, radius*1000]
+        if locality is not None:
+            name=locality.split(',')[0].strip()
+            require(1<=len(name)<=100,'Select a valid village or town',422)
+            locality_filter=" AND lower(trim(split_part(m.village, ',', 1)))=lower(%s)"
+            params.append(name)
         if u:
             params.append(u['id'])
         params.extend([longitude, latitude])
-        return many(c,MACHINE_SELECT+f''' WHERE m.active AND NOT m.moderated AND NOT u.suspended AND COALESCE(m.is_active, true) AND (%s='' OR m.category=%s) AND ST_DWithin(m.location,ST_SetSRID(ST_MakePoint(%s,%s),4326)::geography,%s){owner_filter} ORDER BY ST_Distance(m.location,ST_SetSRID(ST_MakePoint(%s,%s),4326)::geography) LIMIT 100''',tuple(params))
+        return many(c,MACHINE_SELECT+f''' WHERE m.active AND NOT m.moderated AND NOT u.suspended AND COALESCE(m.is_active, true) AND (%s='' OR m.category=%s) AND ST_DWithin(m.location,ST_SetSRID(ST_MakePoint(%s,%s),4326)::geography,%s){locality_filter}{owner_filter} ORDER BY ST_Distance(m.location,ST_SetSRID(ST_MakePoint(%s,%s),4326)::geography) LIMIT 100''',tuple(params))
 @app.get('/api/fleet')
 def fleet(u=Depends(user)):
     with db() as c: return many(c,MACHINE_SELECT+' WHERE m.owner_id=%s ORDER BY m.created_at',(u['id'],))

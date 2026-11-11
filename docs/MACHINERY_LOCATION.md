@@ -1,0 +1,13 @@
+# Find Machinery location scope
+
+Find Machinery no longer starts with Ludhiana or reuses a generic cached listing result. On entering the tab without an explicit selection it requests a fresh browser location (maximumAge zero), then resolves a village/town through Nominatim. Location errors, denied permission, inaccurate fixes over 3 km, unsupported country or missing settlement require manual selection and show no listings. This is current physical location, not a guarantee of the farmer's home village.
+
+An explicit village selection wins over pending GPS callbacks and stays selected while switching workspace tabs. Refreshing the whole page starts location discovery again. No cross-user or previously hardcoded default is used. Changing the selection immediately clears old results; request versions discard stale equipment responses. Failed requests do not restore old cached listings.
+
+The API applies normalized case-insensitive settlement-name matching (the first comma-separated part of the owner's stored village) together with PostGIS distance filtering. Nearby differently named villages and distant same-name listings are excluded. Frontend filtering repeats the settlement-name check. The radius is an additional constraint; it does not broaden the search to other villages. Empty results remain empty.
+
+This uses owner-entered village labels and coordinates, not certified administrative boundary polygons. Misspelled/alternate-language listing labels may require correction. GPS/reverse geocoding may be approximate; the detected town is displayed so the farmer can select the correct one. Nominatim returns the nearest suitable address object, not a guaranteed exact boundary lookup: https://nominatim.org/release-docs/latest/api/Reverse/
+
+Coordinates are sent to the existing OpenStreetMap/Nominatim service for lookup, with a request timeout and no continuous tracking. There is no new paid API, account or API key. The public geocoder has no service guarantee. Manual village search remains available.
+
+Verified: PostgreSQL integration test excludes nearby other-village listings and distant same-name listings, retains category/radius filters and rejects empty locality. Three Node tests cover exact settlement matching, missing-locality responses, fresh GPS, permission denial and poor accuracy. Frontend build passes. Browser verified an initially empty location/result list followed by explicit Kharar selection with no fallback equipment. Successful GPS lookup at the user's physical location was not verified; the manual selection superseded it. Changes are local, not deployed.

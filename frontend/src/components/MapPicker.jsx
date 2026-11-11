@@ -323,7 +323,7 @@ export function MapPicker({
     <div className="map-picker-wrapper" style={{ position: 'relative', width: '100%', borderRadius: '12px', overflow: 'hidden', border: '1px solid #d4decb', display: 'flex', flexDirection: 'column' }}>
       
       {/* Top Search & Preset Bar */}
-      <div style={{
+      {interactive && <div style={{
         background: '#f8fafc',
         borderBottom: '1px solid #e2e8f0',
         padding: '10px 14px',
@@ -406,7 +406,7 @@ export function MapPicker({
             </button>
           ))}
         </div>
-      </div>
+      </div>}
 
       {/* Map Canvas */}
       <div style={{ position: 'relative', width: '100%', height }}>
@@ -489,7 +489,7 @@ export function MapPicker({
           border: '1px solid #e2e8f0',
           pointerEvents: 'none',
         }}>
-          📍 Tap anywhere on map or drag green pin to place your field
+          {interactive ? '📍 Tap anywhere on map or drag green pin to place your field' : 'Showing equipment for the village selected above.'}
         </div>
       </div>
     </div>

@@ -15,11 +15,11 @@ export function recentVillage() {
   } catch {}
   return villages.find(p => key(p) === saved) || villages.find(p => p.name === 'Ludhiana');
 }
-export function VillagePicker({ latitude, longitude, onChange, label, customLabel }) {
+export function VillagePicker({ latitude, longitude, onChange, label, customLabel, selectedPlace, onClear }) {
   const [chosen, setChosen] = useState(recentVillage);
   const sameCoordinates = p => p && p.lat === Number(latitude) && p.lon === Number(longitude);
   const village = villages.find(sameCoordinates) || (sameCoordinates(chosen) ? chosen : null);
-  const selectedLabel = village ? display(village) : customLabel || '';
+  const selectedLabel = selectedPlace ? display(selectedPlace) : village ? display(village) : customLabel || '';
   const id = useId();
   const [text, setText] = useState(selectedLabel);
   const [open, setOpen] = useState(false);
@@ -90,6 +90,7 @@ export function VillagePicker({ latitude, longitude, onChange, label, customLabe
       {!matches.length && !loading && !error && <p role="status">{online ? 'No places found. Add your district or state, or try another spelling.' : 'Type at least 3 letters to search more villages and towns.'}</p>}
       {places.length > 0 && <p className="village-picker-credit">Place data: <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a> · Photon</p>}
     </div>}
+    {onClear&&<button type="button" className="text-button" onClick={onClear}>Use my current village instead</button>}
     <small id={`${id}-hint`} className="village-picker-hint">Type a name, then select the correct village and state. Online suggestions use OpenStreetMap.</small>
   </div>;
 }

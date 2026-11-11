@@ -1,3 +1,4 @@
+import {currentCoordinates,reverseLocality,matchesLocality} from './data/machineryLocation';
 import {ProfileAvatar} from './components/ProfileAvatar';
 import { ProfileForm } from './components/ProfileForm';
 import React, { useState, useEffect, useRef } from 'react';
@@ -100,6 +101,10 @@ function Workspace({ entry, initialUser, onLogout, sharedLang, setSharedLang }) 
   const [radius, setRadius] = useState('5');
   const [lat, setLat] = useState(() => String(recentVillage().lat));
   const [lon, setLon] = useState(() => String(recentVillage().lon));
+  const [searchPlace,setSearchPlace]=useState(null);
+  const placeRef=useRef(null), locationVersion=useRef(0);
+  const searchFilters=useRef({radius,category});searchFilters.current={radius,category};
+  const [locationBusy,setLocationBusy]=useState(false),[locationError,setLocationError]=useState('');
   const [calendarDate,setCalendarDate] = useState(null);
   const searchVersion = useRef(0);
   const [cached, setCached] = useState(false);
@@ -108,7 +113,6 @@ function Workspace({ entry, initialUser, onLogout, sharedLang, setSharedLang }) 
   const [showMap, setShowMap] = useState(true);
 
   useEffect(() => {
-    search();
 
     const onOnline = () => setOnline(true);
     const onOffline = () => setOnline(false);
@@ -194,32 +198,31 @@ function Workspace({ entry, initialUser, onLogout, sharedLang, setSharedLang }) 
     }
   }
 
-  async function search(latitude=lat, longitude=lon) {
-    const version = ++searchVersion.current;
-    const key = `ys-search-${u.id}-${latitude}-${longitude}-${radius}-${category}`;
-    try {
-      const data = await api(
-        `/machines?latitude=${latitude}&longitude=${longitude}&radius=${radius}&category=${encodeURIComponent(
-          category
-        )}`
-      );
-      if(version !== searchVersion.current) return;
-      setMachines(data);
-      localStorage.setItem(key, JSON.stringify({ at: new Date().toISOString(), data }));
-      setCached(false);
-    } catch (e) {
-      if(version !== searchVersion.current) return;
-      let cache;
-      try { cache = JSON.parse(localStorage.getItem(key) || 'null'); } catch {}
-      if (Array.isArray(cache?.data)) {
-        setMachines(cache.data);
-        setCached(true);
-      } else {
-        setMachines([]);
-        setError(e.message);
-      }
-    }
-    setSearched(true);
+  function clearSearch(){++searchVersion.current;setMachines([]);setSearched(false);setCached(false);}
+  function selectSearchPlace(place){
+    ++locationVersion.current;placeRef.current=place;setSearchPlace(place);setLocationBusy(false);setLocationError('');clearSearch();search(place);
+  }
+  async function locateVillage(){
+    const version=++locationVersion.current;placeRef.current=null;setSearchPlace(null);clearSearch();setLocationBusy(true);setLocationError('');
+    try{const coords=await currentCoordinates();if(version!==locationVersion.current)return;
+      const place=await reverseLocality(coords.latitude,coords.longitude);if(version!==locationVersion.current)return;
+      placeRef.current=place;setSearchPlace(place);search(place);
+    }catch(e){if(version===locationVersion.current)setLocationError(e.message||'Select your village manually.');}
+    finally{if(version===locationVersion.current)setLocationBusy(false);}
+  }
+  useEffect(()=>{if(tab==='explore'&&(!placeRef.current||placeRef.current.source==='current'))locateVillage();
+    return()=>{++locationVersion.current;};},[tab]);
+  useEffect(()=>{if(placeRef.current)search(placeRef.current);},[category,radius]);
+  async function search(place=placeRef.current) {
+    const version=++searchVersion.current;setMachines([]);setSearched(false);setCached(false);
+    if(!place?.name)return;
+    try{
+      const params=new URLSearchParams({latitude:place.lat,longitude:place.lon,...searchFilters.current,locality:place.name});
+      const data=await api('/machines?'+params);
+      if(version!==searchVersion.current)return;
+      if(!Array.isArray(data))throw new Error('Unexpected equipment response. Please retry.');
+      setMachines(data.filter(m=>matchesLocality(m,place)));setSearched(true);
+    }catch(e){if(version===searchVersion.current){setMachines([]);setError(e.message);}}
   }
 
   const latestLoad = useRef(0);
@@ -508,8 +511,8 @@ function Workspace({ entry, initialUser, onLogout, sharedLang, setSharedLang }) 
                   run(search);
                 }}
               >
-                <VillagePicker latitude={lat} longitude={lon} label={t('villagePicker')} customLabel={t('mapLocation')}
-                  onChange={p=>{setLat(String(p.lat));setLon(String(p.lon));search(p.lat,p.lon);}} />
+                <VillagePicker latitude={searchPlace?.lat??''} longitude={searchPlace?.lon??''} selectedPlace={searchPlace} label={t('villagePicker')} customLabel="" onClear={locateVillage}
+                  onChange={p=>selectSearchPlace({...p,source:'selected'})} />
                 <FormField label={t('equipmentType')}>
                   <select value={category} onChange={(e) => setCategory(e.target.value)}>
                     <option value="">{t('allMachinery')}</option>
@@ -542,9 +545,12 @@ function Workspace({ entry, initialUser, onLogout, sharedLang, setSharedLang }) 
                 </button>
               </form>
 
+              <p role="status">{locationBusy?'Finding your current village…':searchPlace?`Showing only equipment listed in ${searchPlace.label||searchPlace.name}, within ${radius} km.`:'Select your village or allow location access to see equipment.'}</p>
+              {locationError&&<p role="alert">{locationError} <button type="button" onClick={locateVillage}>Retry current location</button></p>}
+              <p className="muted">Current location uses browser permission and OpenStreetMap. Check the detected town before booking. <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">Map attribution</a></p>
               {(() => {
                 const visibleMachines = machines.filter(
-                  (m) => m.active !== false && m.is_active !== false && (!u || m.owner_id !== u.id)
+                  (m) => matchesLocality(m,searchPlace) && m.active !== false && m.is_active !== false && (!u || m.owner_id !== u.id)
                 );
                 return (
                   <>
@@ -611,20 +617,16 @@ function Workspace({ entry, initialUser, onLogout, sharedLang, setSharedLang }) 
                       </div>
                     </div>
 
-                    {showMap && (
+                    {showMap && searchPlace && (
                       <div style={{ marginBottom: '24px' }}>
                         <MapPicker
-                          center={[Number(lat) || 30.901, Number(lon) || 75.857]}
+                          center={[searchPlace.lat, searchPlace.lon]}
                           radius={Number(radius) || 5}
                           machines={visibleMachines}
-                          onSelectLocation={(newLat, newLon) => {
-                            setLat(newLat);
-                            setLon(newLon);
-                            search(newLat,newLon);
-                          }}
+                          interactive={false}
                           onSelectMachine={rentalAllowed ? openBooking : undefined}
                           height="380px"
-                          showLocate={true}
+                          showLocate={false}
                           lang={lang}
                         />
                       </div>
@@ -647,7 +649,7 @@ function Workspace({ entry, initialUser, onLogout, sharedLang, setSharedLang }) 
                       <div className="empty">
                         <Tractor size={38} />
                         <h3>{t('noMachineryFound')}</h3>
-                        <p>{t('noMachinerySub')}</p>
+                        <p>No equipment matches this village and distance. Select another village or distance to search again.</p>
                       </div>
                     )}
                   </>
