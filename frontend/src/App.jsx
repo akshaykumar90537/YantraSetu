@@ -1,9 +1,11 @@
+import {bookingFilters,matchesBookingFilter} from './data/bookingWorkspace';
 import {currentCoordinates,reverseLocality,matchesLocality} from './data/machineryLocation';
 import {ProfileAvatar} from './components/ProfileAvatar';
 import { ProfileForm } from './components/ProfileForm';
 import React, { useState, useEffect, useRef } from 'react';
 import {
   Sprout,
+  Bookmark,
   Search,
   ArrowUpRight,
   ArrowRight,
@@ -43,7 +45,8 @@ import { RatingModal } from './components/RatingModal';
 import { WeatherDashboard } from './components/WeatherDashboard';
 import { LandingPage } from './components/LandingPage';
 import './style.css';
-import { OperationsPanel } from './components/OperationsPanel';
+import {DashboardWelcome} from './components/DashboardWelcome';
+import { OperationsPanel, SavedEquipment } from './components/OperationsPanel';
 import { AuthGate } from './components/AuthGate';
 
 export function App() {
@@ -98,6 +101,8 @@ function Workspace({ entry, initialUser, onLogout, sharedLang, setSharedLang }) 
   const [orgs, setOrgs] = useState([]);
   const [notifications, setNotifications] = useState([]);
   const [category, setCategory] = useState('');
+  const [equipmentQuery,setEquipmentQuery]=useState('');
+  const [bookingFilter,setBookingFilter]=useState('ALL');
   const [radius, setRadius] = useState('5');
   const [lat, setLat] = useState(() => String(recentVillage().lat));
   const [lon, setLon] = useState(() => String(recentVillage().lon));
@@ -111,6 +116,7 @@ function Workspace({ entry, initialUser, onLogout, sharedLang, setSharedLang }) 
   const [searched, setSearched] = useState(false);
   const [drafts, setDrafts] = useState([]);
   const [showMap, setShowMap] = useState(true);
+  const [mapPin, setMapPin] = useState(null);
 
   useEffect(() => {
 
@@ -200,10 +206,26 @@ function Workspace({ entry, initialUser, onLogout, sharedLang, setSharedLang }) 
 
   function clearSearch(){++searchVersion.current;setMachines([]);setSearched(false);setCached(false);}
   function selectSearchPlace(place){
-    ++locationVersion.current;placeRef.current=place;setSearchPlace(place);setLocationBusy(false);setLocationError('');clearSearch();search(place);
+    setMapPin(null);++locationVersion.current;placeRef.current=place;setSearchPlace(place);setLocationBusy(false);setLocationError('');clearSearch();search(place);
+  }
+  async function selectMapLocation(latitude, longitude) {
+    const version = ++locationVersion.current;
+    setMapPin([Number(latitude), Number(longitude)]);
+    placeRef.current = null; setSearchPlace(null); clearSearch();
+    setLocationBusy(true); setLocationError('');
+    try {
+      const place = await reverseLocality(latitude, longitude);
+      if (version !== locationVersion.current) return;
+      const selected = {...place, source: 'selected'};
+      placeRef.current = selected; setSearchPlace(selected); search(selected);
+    } catch (e) {
+      if (version === locationVersion.current) setLocationError(e.message || 'Could not identify this village. Select a village above or try another pin.');
+    } finally {
+      if (version === locationVersion.current) setLocationBusy(false);
+    }
   }
   async function locateVillage(){
-    const version=++locationVersion.current;placeRef.current=null;setSearchPlace(null);clearSearch();setLocationBusy(true);setLocationError('');
+    setMapPin(null);const version=++locationVersion.current;placeRef.current=null;setSearchPlace(null);clearSearch();setLocationBusy(true);setLocationError('');
     try{const coords=await currentCoordinates();if(version!==locationVersion.current)return;
       const place=await reverseLocality(coords.latitude,coords.longitude);if(version!==locationVersion.current)return;
       placeRef.current=place;setSearchPlace(place);search(place);
@@ -263,6 +285,7 @@ function Workspace({ entry, initialUser, onLogout, sharedLang, setSharedLang }) 
     ['dashboard', CalendarDays, t('dashboard')],
     ['explore', Search, t('explore')],
     ['bookings', CalendarDays, t('bookings')],
+    ...(rentalAllowed ? [['saved', Bookmark, t('saved')]] : []),
     ['weather', CloudSun, t('weatherTab')],
     ...(u?.roles.includes('owner')
       ? [
@@ -271,7 +294,7 @@ function Workspace({ entry, initialUser, onLogout, sharedLang, setSharedLang }) 
       : []),
     ...(u?.roles.includes('fpo') ? [['org', Users, t('org')]] : []),
     ['activity', Bell, t('activity')],
-    ['community', Users, ({hi:'समुदाय और सहायता',pa:'ਭਾਈਚਾਰਾ ਅਤੇ ਸਹਾਇਤਾ'})[lang] || 'Community & support'],
+    ['community', Users, ({hi:'मदद और सहायता',pa:'ਮਦਦ ਅਤੇ ਸਹਾਇਤਾ'})[lang] || 'Help & Support'],
   ];
 
   function openBooking(m) {
@@ -295,7 +318,7 @@ function Workspace({ entry, initialUser, onLogout, sharedLang, setSharedLang }) 
   }
 
   const [scrollTarget,setScrollTarget] = useState('');
-  function showBookings(id) { setTab('bookings'); setScrollTarget(id); }
+  function showBookings(id) { setBookingFilter('ALL'); setTab('bookings'); setScrollTarget(id); }
   useEffect(() => {
     if (tab !== 'bookings' || !scrollTarget || dataState.bookings !== 'ready') return;
     document.getElementById(scrollTarget)?.scrollIntoView({block:'start'});
@@ -488,8 +511,8 @@ function Workspace({ entry, initialUser, onLogout, sharedLang, setSharedLang }) 
             </div>
           )}
 
-          {tab === 'community' ? <OperationsPanel user={u} openBooking={openBooking} lang={lang}/> : tab === 'dashboard' ? <section className="work-dashboard">
-            <div className="section-title"><div><span className="eyebrow">{t('dashboard')}</span><h1>{u.name}</h1></div></div>
+          {tab === 'saved' && rentalAllowed ? <section><h1>Saved Equipment</h1><p>Your saved equipment across villages. Check its location and availability before requesting a rental.</p><SavedEquipment openBooking={openBooking} lang={lang}/></section> : tab === 'community' ? <OperationsPanel user={u} openBooking={openBooking} lang={lang}/> : tab === 'dashboard' ? <section className="work-dashboard">
+            {rentalAllowed ? <DashboardWelcome user={u} place={searchPlace} locationBusy={locationBusy} locationError={locationError} onPlace={selectSearchPlace} onLocate={locateVillage} query={equipmentQuery} setQuery={setEquipmentQuery} onSearch={()=>setTab('explore')} onBookings={()=>setTab('bookings')} onSaved={()=>setTab('saved')}/> : <div className="section-title"><div><span className="eyebrow">{t('dashboard')}</span><h1>{u.name}</h1></div></div>}
             {loadingOrError(isOwner?['bookings','fleet']:['bookings']) || (isOwner ? <div className="work-tiles">
               <article><h2>{t('requestsReview')}</h2><strong>{pending.length}</strong>{pending.slice(0,5).map(b=><p key={b.id}>{b.machine_name} · {b.farmer_name}<br/>{dt(b.start_at)} · {INR(b.estimate)}<br/>Respond by {dt(b.response_due_at)}</p>)}<button className="primary" disabled={!pending.length} onClick={()=>showBookings('actionGroup')}>{t('reviewRequests')}</button></article>
               <article><h2>{t('todayJobs')}</h2><strong>{todayJobs.length}</strong>{todayJobs.map(b=><button className="text-button" key={b.id} onClick={()=>showBookings('booking-'+b.id)}>{b.machine_name} · {dt(b.start_at)}</button>)}</article>
@@ -503,15 +526,16 @@ function Workspace({ entry, initialUser, onLogout, sharedLang, setSharedLang }) 
           </section> : tab === 'explore' ? (
             <>
               <h1>{t('explore')}</h1>
+              <FormField label="Search equipment by name or type"><input className="equipment-query-input" type="search" value={equipmentQuery} onChange={e=>setEquipmentQuery(e.target.value)} maxLength={120} placeholder="Tractor, harvester, sprayer…"/></FormField>
 
               <form
-                className="search-panel"
+                className="search-panel machinery-search"
                 onSubmit={(e) => {
                   e.preventDefault();
                   run(search);
                 }}
               >
-                <VillagePicker latitude={searchPlace?.lat??''} longitude={searchPlace?.lon??''} selectedPlace={searchPlace} label={t('villagePicker')} customLabel="" onClear={locateVillage}
+                <VillagePicker latitude={searchPlace?.lat??''} longitude={searchPlace?.lon??''} selectedPlace={searchPlace} label={t('villagePicker')} customLabel="" onClear={locateVillage} hideHint hintId="machinery-village-hint"
                   onChange={p=>selectSearchPlace({...p,source:'selected'})} />
                 <FormField label={t('equipmentType')}>
                   <select value={category} onChange={(e) => setCategory(e.target.value)}>
@@ -543,14 +567,15 @@ function Workspace({ entry, initialUser, onLogout, sharedLang, setSharedLang }) 
                   <Search size={18} />
                   {t('search')}
                 </button>
+                <small id="machinery-village-hint" className="machinery-search-hint">Type a name, then select the correct village and state. Online suggestions use OpenStreetMap.</small>
               </form>
 
-              <p role="status">{locationBusy?'Finding your current village…':searchPlace?`Showing only equipment listed in ${searchPlace.label||searchPlace.name}, within ${radius} km.`:'Select your village or allow location access to see equipment.'}</p>
+              <p role="status">{locationBusy?'Identifying your village or town…':searchPlace?`Showing only equipment listed in ${searchPlace.label||searchPlace.name}, within ${radius} km.`:'Select your village or allow location access to see equipment.'}</p>
               {locationError&&<p role="alert">{locationError} <button type="button" onClick={locateVillage}>Retry current location</button></p>}
               <p className="muted">Current location uses browser permission and OpenStreetMap. Check the detected town before booking. <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">Map attribution</a></p>
               {(() => {
                 const visibleMachines = machines.filter(
-                  (m) => matchesLocality(m,searchPlace) && m.active !== false && m.is_active !== false && (!u || m.owner_id !== u.id)
+                  (m) => (!equipmentQuery.trim() || `${m.name || ''} ${m.category || ''}`.toLocaleLowerCase().includes(equipmentQuery.trim().toLocaleLowerCase())) && matchesLocality(m,searchPlace) && m.active !== false && m.is_active !== false && (!u || m.owner_id !== u.id)
                 );
                 return (
                   <>
@@ -607,7 +632,9 @@ function Workspace({ entry, initialUser, onLogout, sharedLang, setSharedLang }) 
                         <button
                           type="button"
                           className={showMap ? 'primary' : 'outline'}
-                          onClick={() => setShowMap(!showMap)}
+                          onClick={() => setShowMap(value => !value)}
+                          aria-expanded={showMap}
+                          aria-controls="machinery-map-panel"
                           style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
                         >
                           <MapPin size={16} />
@@ -617,18 +644,23 @@ function Workspace({ entry, initialUser, onLogout, sharedLang, setSharedLang }) 
                       </div>
                     </div>
 
-                    {showMap && searchPlace && (
-                      <div style={{ marginBottom: '24px' }}>
+                    {showMap && (
+                      <div id="machinery-map-panel" role="region" aria-label="Equipment map" style={{ marginBottom: '24px' }}>
                         <MapPicker
-                          center={[searchPlace.lat, searchPlace.lon]}
+                          center={mapPin || (searchPlace ? [searchPlace.lat, searchPlace.lon] : [22.5, 79])}
+                          zoom={mapPin || searchPlace ? 12 : 5}
+                          showCenterMarker={Boolean(mapPin || searchPlace)}
+                          showLocationTools={false}
+                          onSelectLocation={selectMapLocation}
                           radius={Number(radius) || 5}
                           machines={visibleMachines}
-                          interactive={false}
+                          interactive={true}
                           onSelectMachine={rentalAllowed ? openBooking : undefined}
                           height="380px"
                           showLocate={false}
                           lang={lang}
                         />
+                        <p role="status">{locationBusy ? "Identifying the village or town…" : "Click the map or drag the pin to select a village. Equipment appears only after its village is identified."}</p>
                       </div>
                     )}
 
@@ -693,6 +725,8 @@ function Workspace({ entry, initialUser, onLogout, sharedLang, setSharedLang }) 
               ) : (
                 <>
                   {tab === 'bookings' && (<>
+                      <p>Manage requests, pickup, return and billing in one place.</p>
+                      <nav className="booking-status-tabs" aria-label="Filter bookings by status">{bookingFilters.map(filter=><button type="button" key={filter.id} aria-pressed={bookingFilter===filter.id} onClick={()=>setBookingFilter(filter.id)}>{filter.label}<span>{dataState.bookings==='ready'?rows.filter(b=>matchesBookingFilter(b,filter.id)).length:'—'}</span></button>)}</nav>
                       {loadingOrError(['bookings']) || <><div className="stats">
                         <Stat
                           label={t('activeBookings')}
@@ -761,7 +795,7 @@ function Workspace({ entry, initialUser, onLogout, sharedLang, setSharedLang }) 
                       )}
 
                       {dataState.bookings === 'ready' && ['actionGroup','upcomingGroup','historyGroup'].map(group => {
-                        const items = rows.filter(b => bookingGroup(b,u.id) === group).sort((a,b)=>(group==='historyGroup'?-1:1)*(Date.parse(a.start_at)-Date.parse(b.start_at)));
+                        const items = rows.filter(b => matchesBookingFilter(b,bookingFilter) && bookingGroup(b,u.id) === group).sort((a,b)=>(group==='historyGroup'?-1:1)*(Date.parse(a.start_at)-Date.parse(b.start_at)));
                         return items.length ? <section key={group} id={group}><h2>{t(group)} ({items.length})</h2>{items.map(b=><div id={'booking-'+b.id} key={b.id}>
                         <BookingCard
                           key={b.id}
@@ -777,11 +811,12 @@ function Workspace({ entry, initialUser, onLogout, sharedLang, setSharedLang }) 
                         {isOwner && b.owner_id===u.id && b.status==='PENDING' && <button className="outline compare-week" onClick={()=>{setCalendarDate(b.start_at);setTab('fleet');}}>{t('compareWeek')}</button>}
                       </div>)}</section> : null; })}
 
-                      {dataState.bookings === 'ready' && !rows.length && (
-                        <div className="empty">
-                          <CalendarDays size={36} />
-                          <h3>{t('noBookingsYet')}</h3>
-                          <p>{t('noBookingsSub')}</p>
+                      {dataState.bookings === 'ready' && !rows.some(b=>matchesBookingFilter(b,bookingFilter)) && (
+                        <div className="empty booking-empty">
+                          <CalendarDays size={30} />
+                          <h3>{rows.length ? `No ${bookingFilters.find(f=>f.id===bookingFilter)?.label.toLowerCase()} bookings` : t('noBookingsYet')}</h3>
+                          <p>{rows.length ? 'Choose another status to view your rentals.' : t('noBookingsSub')}</p>
+                          {rows.length ? <button className="outline" onClick={()=>setBookingFilter('ALL')}>Show all bookings</button> : rentalAllowed && <button className="primary" onClick={()=>setTab('explore')}>Find machinery</button>}
                         </div>
                       )}
                     </>

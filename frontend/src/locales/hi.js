@@ -1,4 +1,5 @@
 export const hi = {
+  saved: 'सहेजे गए उपकरण',
   // Navigation
   explore: 'मशीन खोजें',
   bookings: 'मेरी बुकिंग',
@@ -81,7 +82,7 @@ export const hi = {
   viewBookings: 'बुकिंग्स देखें',
 
   // Notifications
-  community: 'समुदाय और सहायता',
+  community: 'मदद और सहायता',
   notificationsBanner: 'ऐप के अंदर सूचनाएँ। ईमेल या SMS संदेश नहीं भेजे जाते।',
   noNotifications: 'कोई नई सूचना नहीं।',
 

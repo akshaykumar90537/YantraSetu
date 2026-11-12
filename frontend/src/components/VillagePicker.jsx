@@ -15,7 +15,7 @@ export function recentVillage() {
   } catch {}
   return villages.find(p => key(p) === saved) || villages.find(p => p.name === 'Ludhiana');
 }
-export function VillagePicker({ latitude, longitude, onChange, label, customLabel, selectedPlace, onClear }) {
+export function VillagePicker({ latitude, longitude, onChange, label, customLabel, selectedPlace, onClear, hintId, hideHint = false }) {
   const [chosen, setChosen] = useState(recentVillage);
   const sameCoordinates = p => p && p.lat === Number(latitude) && p.lon === Number(longitude);
   const village = villages.find(sameCoordinates) || (sameCoordinates(chosen) ? chosen : null);
@@ -61,7 +61,7 @@ export function VillagePicker({ latitude, longitude, onChange, label, customLabe
     <input id={id} type="text" role="combobox" autoComplete="off" maxLength={120}
       placeholder="Type your village or town" value={text}
       aria-autocomplete="list" aria-expanded={open} aria-controls={`${id}-list`}
-      aria-describedby={`${id}-hint`} aria-busy={open && loading}
+      aria-describedby={hintId || `${id}-hint`} aria-busy={open && loading}
       aria-activedescendant={open && active >= 0 && matches[active] ? `${id}-option-${active}` : undefined}
       onFocus={e => { setOpen(true); e.target.select(); }}
       onChange={e => { setText(e.target.value); setOpen(true); setActive(-1); }}
@@ -91,6 +91,6 @@ export function VillagePicker({ latitude, longitude, onChange, label, customLabe
       {places.length > 0 && <p className="village-picker-credit">Place data: <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a> · Photon</p>}
     </div>}
     {onClear&&<button type="button" className="text-button" onClick={onClear}>Use my current village instead</button>}
-    <small id={`${id}-hint`} className="village-picker-hint">Type a name, then select the correct village and state. Online suggestions use OpenStreetMap.</small>
+    {!hideHint && <small id={`${id}-hint`} className="village-picker-hint">Type a name, then select the correct village and state. Online suggestions use OpenStreetMap.</small>}
   </div>;
 }

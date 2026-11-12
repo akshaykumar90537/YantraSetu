@@ -1,3 +1,5 @@
+import {BookingBilling} from './BookingBilling';
+import {hasFinalBill} from '../data/bookingWorkspace';
 import React, { useEffect, useState } from 'react';
 import { CalendarDays, IndianRupee, Wrench, Fuel, Star, User, ShieldCheck } from 'lucide-react';
 import { BookingTools } from './BookingTools';
@@ -50,15 +52,14 @@ export function BookingCard({ booking: b, user: u, busy, run, load, setModal, no
       <div className="booking-heading">
         <div>
           <small>
-            {bookingCode} · {b?.village || 'Punjab'}
+            {bookingCode} · {b?.village || 'Location not provided'}
           </small>
           <h3>{b?.machine_name || 'Farm Equipment'}</h3>
         </div>
         <span className={'status ' + statusRaw.toLowerCase()}>{statusLabel}</span>
       </div>
 
-      <BookingTools lang={lang} booking={b} user={u} load={load} setModal={setModal} run={run}/>
-      {['PENDING','APPROVED'].includes(b.status)&&<label>Reason if rejecting or cancelling (optional)<input value={reason} maxLength={500} onChange={e=>setReason(e.target.value)}/></label>}
+      {(owner||farmer)&&['PENDING','APPROVED'].includes(b.status)&&<label>Reason if rejecting or cancelling (optional)<input value={reason} maxLength={500} onChange={e=>setReason(e.target.value)}/></label>}
       <div className="booking-meta">
         <span>
           <CalendarDays size={16} />
@@ -66,7 +67,7 @@ export function BookingCard({ booking: b, user: u, busy, run, load, setModal, no
         </span>
         <span>
           <IndianRupee size={16} />
-          {b.final_total ? INR(b.final_total) + ' final' : INR(b.estimate) + ' estimated'}
+          {hasFinalBill(b) ? INR(b.final_total) + ' final' : INR(b.estimate) + ' estimated'}
         </span>
       </div>
 
@@ -208,11 +209,14 @@ export function BookingCard({ booking: b, user: u, busy, run, load, setModal, no
         </div>
       )}
 
+      <BookingBilling booking={b}/>
+      <BookingTools lang={lang} booking={b} user={u} load={load} setModal={setModal} run={run}/>
       <p className="caption">
         {paymentLabel} — manually reported, not independently verified.
       </p>
 
       <div className="actions">
+        {farmer && b.owner_phone && ['APPROVED','IN_PROGRESS','COMPLETED'].includes(b.status) && <a className="outline" href={`tel:${b.owner_phone}`}>Call owner</a>}
         {owner && b.status === 'PENDING' && (
           <>
             <button className="primary" disabled={busy} onClick={() => action('approve')}>
@@ -238,13 +242,13 @@ export function BookingCard({ booking: b, user: u, busy, run, load, setModal, no
 
         {(owner || u.id === b.operator_id) && ['APPROVED', 'IN_PROGRESS'].includes(b.status) && (
           <button className="primary" onClick={() => setModal({ type: 'meter', b })}>
-            {b.status === 'APPROVED' ? t('submitStartReadingBtn') : t('submitEndReadingBtn')}
+            {b.status === 'APPROVED' ? 'Start pickup · submit meter & OTP' : 'Start return · submit meter & OTP'}
           </button>
         )}
 
         {farmer && ['APPROVED', 'IN_PROGRESS'].includes(b.status) && (
           <button className="primary" onClick={() => setModal({ type: 'confirm-meter', b })}>
-            {t('reviewConfirmReadingBtn')}
+            {b.status === 'APPROVED' ? 'Verify pickup OTP & reading' : 'Verify return OTP & final charges'}
           </button>
         )}
 

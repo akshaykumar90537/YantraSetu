@@ -1,4 +1,5 @@
 export const en = {
+  saved: 'Saved Equipment',
   // Navigation
   explore: 'Find machinery',
   bookings: 'My bookings',
@@ -81,7 +82,7 @@ export const en = {
   viewBookings: 'View bookings',
 
   // Notifications
-  community: 'Community & support',
+  community: 'Help & Support',
   notificationsBanner: 'In-app notifications. No email or SMS messages are sent.',
   noNotifications: 'No notifications yet.',
 

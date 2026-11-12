@@ -1,5 +1,5 @@
 import {validateCommunityResponse} from '../data/communityResponse';
-import {RentalGuides,SupportHub,SupportThread} from './CommunityHelp';
+import {RentalFAQs,RentalGuides,SupportHub,SupportThread} from './CommunityHelp';
 import React, { useEffect, useState, useContext } from 'react';
 import { OperationsLanguage, localizeOperations } from '../locales/operations';
 import { api, canRent } from '../api';
@@ -37,14 +37,16 @@ export function OperationsPanel({user,openBooking,lang='en'}) {
   const farmer=canRent(user),owner=user.roles.includes('owner'),fpo=user.roles.includes('fpo');
   const [assisted,setAssisted]=useState(null),[assistError,setAssistError]=useState(''),[assistBusy,setAssistBusy]=useState(false);
   const run=async fn=>{setAssistBusy(true);setAssistError('');try{await fn();}catch(e){setAssistError(e.message);}finally{setAssistBusy(false);}};
-  return <OperationsLanguage.Provider value={lang}>{localizeOperations(<section className="operations-panel"><h2>{({hi:'समुदाय और सहायता',pa:'ਭਾਈਚਾਰਾ ਅਤੇ ਸਹਾਇਤਾ'})[lang]||'Community & support'}</h2>
+  return <OperationsLanguage.Provider value={lang}>{localizeOperations(<section className="operations-panel"><h2>{({hi:'मदद और सहायता',pa:'ਮਦਦ ਅਤੇ ਸਹਾਇਤਾ'})[lang]||'Help & Support'}</h2>
+    <p>FAQs, safety guides, report issue, and support requests.</p>
+    <RentalFAQs/>
+    <RentalGuides/>
+    <SupportHub/>
     <label className="photo-preference"><input type="checkbox" checked={lowData} onChange={e=>{setLowData(e.target.checked);localStorage.setItem('ys-low-data',e.target.checked?'1':'0');window.dispatchEvent(new Event('ys:photo-preference'));}}/><span>Load photos only when requested (saves data)</span></label>
     <p>Your account ID: <code style={{overflowWrap:'anywhere'}}>{user.id}</code></p>
     <Resource path="/notification-preferences">{(p,reload)=><OperationForm title="In-app rental reminders" fields={[{name:'reminders',label:'Reminders',defaultValue:p.reminders?'Enabled':'Disabled',options:['Enabled','Disabled']}]} action={`Currently ${p.reminders?'enabled':'disabled'} · Update`} submit={async d=>{await api('/notification-preferences',{reminders:d.reminders==='Enabled'});reload();}}/>}</Resource>
     <p>Reminders appear in Activity when you open it. Email and SMS delivery are not enabled.</p>
-    {farmer&&<Resource path="/saved-machines">{(items,reload)=><section><h3>Saved equipment</h3>{!items.length&&<p>Save equipment from Explore to find it here.</p>}{items.map(m=><article key={m.id}><h4>{m.name} · {m.village}</h4><p>{INR(m.rate)} / {m.unit}</p><button className="primary" onClick={()=>openBooking(m)}>Check dates & rent</button><OperationForm title="Remove saved equipment" fields={[]} action="Remove" submit={async()=>{await api('/saved-machines/'+m.id,null,'DELETE');reload();}}/></article>)}</section>}</Resource>}
-    <RentalGuides/>
-    <SupportHub/>
+    {farmer&&<SavedEquipment openBooking={openBooking} lang={lang}/>}
     <Resource path="/demand">{(data,reload)=><section><h3>Request unavailable equipment</h3>{farmer&&<OperationForm title="Tell owners what your village needs" fields={[{name:'village',label:'Village or town',minLength:2},{name:'category',label:'Equipment',options:['Tractor','Rotavator','Harvester','Seed drill','Sprayer','Cultivator']},{name:'needed_at',label:'Needed by',type:'datetime-local'},{name:'notes',label:'Notes (private to your account)',type:'textarea',required:false,maxLength:500}]} submit={async d=>{await api('/demand',{...d,needed_at:new Date(d.needed_at).toISOString()});reload();}}/>}
       <p>These are requests, not confirmed rentals. Owners can see village demand totals, not your contact details. Direct owner offers are not available here yet.</p>
       {data.summary.length?<ul>{data.summary.map((x,i)=><li key={i}>{x.village}: {x.category} · {x.requests} requests · earliest {dt(x.earliest)}</li>)}</ul>:<p>No open demand yet.</p>}
@@ -65,4 +67,8 @@ export function OperationsPanel({user,openBooking,lang='en'}) {
       <Resource path="/pilot-metrics">{m=><div><h3>Pilot metrics</h3><ul>{Object.entries(m.bookings).map(([k,v])=><li key={k}>{k}: {v}</li>)}</ul><p>Average owner response: {m.average_response_minutes.value===null?'No responses yet':Number(m.average_response_minutes.value).toFixed(1)+' minutes'}</p><p>Farmers with multiple requests: {m.repeat_farmers.count}</p>{m.support.map((s,i)=><p key={i}>{s.kind} · {s.status}: {s.count}</p>)}</div>}</Resource>
     </section>}</Resource>
   </section>,lang)}</OperationsLanguage.Provider>;
+}
+
+export function SavedEquipment({openBooking,lang="en"}) {
+ return <OperationsLanguage.Provider value={lang}><Resource path="/saved-machines">{(items,reload)=><section><h3>Saved equipment</h3>{!items.length&&<p>Save equipment from Explore to find it here.</p>}{items.map(m=><article key={m.id}><h4>{m.name} · {m.village}</h4><p>{INR(m.rate)} / {m.unit}</p><button className="primary" onClick={()=>openBooking(m)}>Check dates & rent</button><OperationForm title="Remove saved equipment" fields={[]} action="Remove" submit={async()=>{await api('/saved-machines/'+m.id,null,'DELETE');reload();}}/></article>)}</section>}</Resource></OperationsLanguage.Provider>;
 }

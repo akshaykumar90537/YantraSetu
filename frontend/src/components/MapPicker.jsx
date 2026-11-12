@@ -8,6 +8,9 @@ import { searchLocalVillages, searchOnlineVillages } from '../data/villages';
 export function MapPicker({
   center = [30.901, 75.857],
   radius = 5,
+  zoom = 12,
+  showCenterMarker = true,
+  showLocationTools = true,
   machines = [],
   onSelectLocation,
   onSelectMachine,
@@ -37,7 +40,7 @@ export function MapPicker({
 
     const map = L.map(mapContainerRef.current, {
       center: [Number(center[0]) || 30.901, Number(center[1]) || 75.857],
-      zoom: 12,
+      zoom,
       zoomControl: true,
     });
 
@@ -56,11 +59,26 @@ export function MapPicker({
       });
     }
 
+    const resizeObserver = new ResizeObserver(() => map.invalidateSize());
+    resizeObserver.observe(mapContainerRef.current);
+
     return () => {
+      resizeObserver.disconnect();
       map.remove();
       mapRef.current = null;
+      userMarkerRef.current = null;
+      circleRef.current = null;
+      machineMarkersRef.current = [];
     };
   }, []);
+
+  // Follow the selected village, including changes while the map is open.
+  useEffect(() => {
+    const lat = Number(center[0]), lon = Number(center[1]);
+    if (Number.isFinite(lat) && Number.isFinite(lon)) {
+      mapRef.current?.setView([lat, lon], zoom);
+    }
+  }, [center[0], center[1], zoom]);
 
   // Update user pin and search radius circle
   useEffect(() => {
@@ -69,6 +87,12 @@ export function MapPicker({
 
     const lat = Number(center[0]) || 30.901;
     const lon = Number(center[1]) || 75.857;
+
+    if (!showCenterMarker) {
+      userMarkerRef.current?.remove(); userMarkerRef.current = null;
+      circleRef.current?.remove(); circleRef.current = null;
+      return;
+    }
 
     // Custom SVG User Pin Icon
     const userIcon = L.divIcon({
@@ -138,7 +162,7 @@ export function MapPicker({
         circleRef.current.setRadius(radiusMeters);
       }
     }
-  }, [center[0], center[1], radius]);
+  }, [center[0], center[1], radius, showCenterMarker]);
 
   // Update machine markers
   useEffect(() => {
@@ -323,7 +347,7 @@ export function MapPicker({
     <div className="map-picker-wrapper" style={{ position: 'relative', width: '100%', borderRadius: '12px', overflow: 'hidden', border: '1px solid #d4decb', display: 'flex', flexDirection: 'column' }}>
       
       {/* Top Search & Preset Bar */}
-      {interactive && <div style={{
+      {interactive && showLocationTools && <div style={{
         background: '#f8fafc',
         borderBottom: '1px solid #e2e8f0',
         padding: '10px 14px',

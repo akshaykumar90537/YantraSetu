@@ -2,6 +2,16 @@ import {validateCommunityResponse} from '../data/communityResponse';
 import React,{useEffect,useState} from 'react';
 import {api} from '../api';
 import {dt} from '../locales';
+export function RentalFAQs(){
+ const questions=[
+  ['How do I find equipment near me?', 'Open Find machinery and select your village or town, allow current location, or choose a location on the map. Select an equipment type and search radius to narrow the results.'],
+  ['When is my booking confirmed?', 'A request is confirmed only after the owner accepts it. Check My bookings for the latest status before arranging pickup.'],
+  ['How do pickup and return work?', 'Review the equipment condition, meter reading and agreed charges with the other party. Use the handover and return confirmation steps in My bookings. Never share a sign-in OTP.'],
+  ['How do I report an issue or follow up?', 'For rental problems, select your booking in Support requests or use Report a problem in My bookings. For misleading or unsafe listings, use Report issue below. Your requests show their status and staff replies here.'],
+  ['How do I pay for a rental?', 'Arrange payment directly with the owner. YantraSetu records manually reported payment status; it does not collect online payments or independently verify them.']
+ ];
+ return <section><h3>FAQs</h3>{questions.map(([question,answer])=><details key={question}><summary>{question}</summary><p>{answer}</p></details>)}</section>;
+}
 export function RentalGuides(){
  const guides=[
  ['Before requesting equipment','Check the equipment description, dates, rental unit, transport cost, fuel and operator arrangements. Submit a request only after reviewing the estimate. A request is not confirmed until the owner accepts.'],
@@ -16,7 +26,7 @@ export function RentalGuides(){
 export function ReportListing({machineId,onSaved}){
  const [error,setError]=useState(''),[saved,setSaved]=useState(''),[busy,setBusy]=useState(false);
  return <details><summary>Report {machineId?'this listing':'harmful or misleading content'}</summary><p>Report a listing for scams, misleading claims, unsafe content or abuse. Do not include passwords, OTPs or identity documents.</p>
- <form className="operation-form" onSubmit={async e=>{e.preventDefault();const f=new FormData(e.currentTarget);setBusy(true);setError('');setSaved('');try{const r=await api('/content-reports',{machine_id:machineId||f.get('machine_id'),reason:f.get('reason'),description:f.get('description')});setSaved(`Report submitted: ${r.id}. Track it in Community & support.`);onSaved?.()}catch(e){setError(e.message)}finally{setBusy(false)}}}>
+ <form className="operation-form" onSubmit={async e=>{e.preventDefault();const f=new FormData(e.currentTarget);setBusy(true);setError('');setSaved('');try{const r=await api('/content-reports',{machine_id:machineId||f.get('machine_id'),reason:f.get('reason'),description:f.get('description')});setSaved(`Report submitted: ${r.id}. Track it in Help & Support.`);onSaved?.()}catch(e){setError(e.message)}finally{setBusy(false)}}}>
  {!machineId&&<label>Equipment ID (shown on the equipment card)<input name="machine_id" required/></label>}
  <label>Reason<select name="reason">{['SCAM','MISLEADING','UNSAFE','ABUSIVE','OTHER'].map(v=><option key={v}>{v}</option>)}</select></label>
  <label>What happened?<textarea name="description" required minLength={10} maxLength={2000}/></label><button disabled={busy||!!saved}>Submit private report</button>
@@ -34,7 +44,7 @@ export function SupportHub(){
  const [cases,setCases]=useState([]),[bookings,setBookings]=useState([]),[reports,setReports]=useState([]),[error,setError]=useState(''),[busy,setBusy]=useState(false),[loaded,setLoaded]=useState(false),[message,setMessage]=useState('');
  async function refresh(){try{const [c,b,r]=await Promise.all([api('/support'),api('/bookings'),api('/content-reports')]);setCases(validateCommunityResponse('/support',c));setBookings(validateCommunityResponse('/bookings',b));setReports(validateCommunityResponse('/content-reports',r));setError('');setLoaded(true)}catch(e){setError(e.message)}}
  useEffect(()=>{refresh()},[]);
- return <section><h3>My support requests</h3><button onClick={refresh}>Refresh support requests</button>
+ return <section><h3>Support requests</h3><button onClick={refresh}>Refresh support requests</button>
  {error&&<p role="alert">{error}</p>}{!loaded&&!error&&<p role="status">Loading support…</p>}
  <p>Private help linked to your rental. Staff response times are not guaranteed; this is not an emergency service.</p>
  {loaded&&(bookings.length?<form className="operation-form" onSubmit={async e=>{e.preventDefault();const form=e.currentTarget;setBusy(true);setMessage('');try{const r=await api('/support',Object.fromEntries(new FormData(form)));setMessage(`Case submitted: ${r.id}`);form.reset();await refresh()}catch(e){setError(e.message)}finally{setBusy(false)}}}>
@@ -43,7 +53,7 @@ export function SupportHub(){
  <label>Describe the issue<textarea name="description" minLength={10} maxLength={2000} required/></label><button disabled={busy}>Request booking help</button></form>:<p>You have no bookings yet. Use the listing report below for a problem with equipment advertising.</p>)}
  {message&&<p role="status">{message}</p>}{loaded&&!cases.length&&<p>No support cases yet.</p>}
  {cases.map(x=><article key={x.id}><h4>{x.machine_name} · {x.kind} · {x.status}</h4><p>Case: {x.id}</p><p>{x.description}</p><small>Created {dt(x.created_at)} · updated {dt(x.updated_at)}</small>{x.resolution&&<p>Latest staff response: {x.resolution}</p>}<SupportThread item={x} onChange={refresh}/></article>)}
- <h3>My listing reports</h3><ReportListing onSaved={refresh}/>{loaded&&!reports.length&&<p>No listing reports yet.</p>}
+ <h3>Report issue</h3><ReportListing onSaved={refresh}/>{loaded&&!reports.length&&<p>No listing reports yet.</p>}
  {reports.map(r=><article key={r.id}><h4>{r.machine_name} · {r.status}</h4><p>{r.reason}: {r.description}</p>{r.resolution&&<p>Staff response: {r.resolution}</p>}<small>Report {r.id} · updated {dt(r.updated_at)}</small></article>)}
  </section>;
 }

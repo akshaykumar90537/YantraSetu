@@ -1,4 +1,5 @@
 export const pa = {
+  saved: 'ਸੰਭਾਲੇ ਉਪਕਰਨ',
   // Navigation
   explore: 'ਮਸ਼ੀਨ ਲੱਭੋ',
   bookings: 'ਮੇਰੀ ਬੁਕਿੰਗ',
@@ -81,7 +82,7 @@ export const pa = {
   viewBookings: 'ਬੁਕਿੰਗਾਂ ਦੇਖੋ',
 
   // Notifications
-  community: 'ਭਾਈਚਾਰਾ ਅਤੇ ਸਹਾਇਤਾ',
+  community: 'ਮਦਦ ਅਤੇ ਸਹਾਇਤਾ',
   notificationsBanner: 'ਐਪ ਦੇ ਅੰਦਰ ਸੂਚਨਾਵਾਂ। ਈਮੇਲ ਜਾਂ SMS ਸੁਨੇਹੇ ਨਹੀਂ ਭੇਜੇ ਜਾਂਦੇ।',
   noNotifications: 'ਕੋਈ ਨਵਾਂ ਸੁਨੇਹਾ ਨਹੀਂ।',
 

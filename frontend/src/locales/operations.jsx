@@ -1,7 +1,7 @@
 import React, { createContext } from 'react';
 export const OperationsLanguage=createContext('en');
 const rows=[
-['Community & support','समुदाय और सहायता','ਭਾਈਚਾਰਾ ਅਤੇ ਸਹਾਇਤਾ'],
+['Help & Support','मदद और सहायता','ਮਦਦ ਅਤੇ ਸਹਾਇਤਾ'],
 ['In-app rental reminders','ऐप में किराये की याद दिलाएँ','ਐਪ ਵਿੱਚ ਕਿਰਾਏ ਦੀ ਯਾਦ'],
 ['Reminders','याद दिलाना','ਯਾਦ ਦਿਵਾਉਣਾ'],['Enabled','चालू','ਚਾਲੂ'],['Disabled','बंद','ਬੰਦ'],
 ['Save','सहेजें','ਸੰਭਾਲੋ'],['Saving…','सहेजा जा रहा है…','ਸੰਭਾਲਿਆ ਜਾ ਰਿਹਾ ਹੈ…'],['Saved successfully.','सफलतापूर्वक सहेजा गया।','ਸਫਲਤਾਪੂਰਵਕ ਸੰਭਾਲਿਆ ਗਿਆ।'],['Retry','फिर प्रयास करें','ਮੁੜ ਕੋਸ਼ਿਸ਼ ਕਰੋ'],['Loading…','लोड हो रहा है…','ਲੋਡ ਹੋ ਰਿਹਾ ਹੈ…'],
@@ -20,7 +20,7 @@ const rows=[
 ['Share the group ID only with intended members. Joining shares equipment, dates and individual costs with the group. Every member books and pays the owner separately; availability conflicts still apply.','समूह ID केवल इच्छित सदस्यों को दें। जुड़ने पर उपकरण, तारीखें और व्यक्तिगत लागत समूह को दिखेंगी। प्रत्येक सदस्य अलग बुकिंग और मालिक को अलग भुगतान करेगा; एक ही समय की बुकिंग टकराने पर रोक लगेगी।','ਸਮੂਹ ID ਸਿਰਫ਼ ਚੁਣੇ ਮੈਂਬਰਾਂ ਨੂੰ ਦਿਓ। ਜੁੜਨ ਨਾਲ ਉਪਕਰਨ, ਤਾਰੀਖਾਂ ਅਤੇ ਨਿੱਜੀ ਖਰਚੇ ਸਮੂਹ ਨੂੰ ਦਿਸਣਗੇ। ਹਰ ਮੈਂਬਰ ਵੱਖਰੀ ਬੁਕਿੰਗ ਅਤੇ ਮਾਲਕ ਨੂੰ ਵੱਖਰਾ ਭੁਗਤਾਨ ਕਰੇਗਾ; ਇੱਕੋ ਸਮੇਂ ਦੀਆਂ ਬੁਕਿੰਗਾਂ ਟਕਰਾਉਣ ਤੇ ਰੋਕ ਲੱਗੇਗੀ।'],
 ['Describe what happened (do not include passwords or payment credentials)','बताएँ क्या हुआ (पासवर्ड या भुगतान की गोपनीय जानकारी न दें)','ਦੱਸੋ ਕੀ ਹੋਇਆ (ਪਾਸਵਰਡ ਜਾਂ ਭੁਗਤਾਨ ਦੀ ਗੁਪਤ ਜਾਣਕਾਰੀ ਨਾ ਦਿਓ)'],
 ['Report a breakdown, delay or billing problem from the relevant booking. Cases require staff review; this is not an emergency service.','संबंधित बुकिंग से मशीन खराब होने, देरी या बिल की समस्या बताएँ। कर्मचारियों की समीक्षा जरूरी है; यह आपातकालीन सेवा नहीं है।','ਸੰਬੰਧਿਤ ਬੁਕਿੰਗ ਤੋਂ ਮਸ਼ੀਨ ਖਰਾਬ ਹੋਣ, ਦੇਰੀ ਜਾਂ ਬਿੱਲ ਦੀ ਸਮੱਸਿਆ ਦੱਸੋ। ਕਰਮਚਾਰੀ ਸਮੀਖਿਆ ਜ਼ਰੂਰੀ ਹੈ; ਇਹ ਐਮਰਜੈਂਸੀ ਸੇਵਾ ਨਹੀਂ ਹੈ।'],
-['Track replies in Community & support. This does not cancel the booking or issue a refund.','समुदाय और सहायता में जवाब देखें। इससे बुकिंग रद्द या पैसे वापस नहीं होते।','ਭਾਈਚਾਰਾ ਅਤੇ ਸਹਾਇਤਾ ਵਿੱਚ ਜਵਾਬ ਵੇਖੋ। ਇਸ ਨਾਲ ਬੁਕਿੰਗ ਰੱਦ ਜਾਂ ਪੈਸੇ ਵਾਪਸ ਨਹੀਂ ਹੁੰਦੇ।'],
+['Track replies in Help & Support. This does not cancel the booking or issue a refund.','मदद और सहायता में जवाब देखें। इससे बुकिंग रद्द या पैसे वापस नहीं होते।','ਮਦਦ ਅਤੇ ਸਹਾਇਤਾ ਵਿੱਚ ਜਵਾਬ ਵੇਖੋ। ਇਸ ਨਾਲ ਬੁਕਿੰਗ ਰੱਦ ਜਾਂ ਪੈਸੇ ਵਾਪਸ ਨਹੀਂ ਹੁੰਦੇ।'],
 ['These are requests, not confirmed rentals. Public totals do not include farmer contact details.','ये अनुरोध हैं, पक्की बुकिंग नहीं। सार्वजनिक संख्या में किसान के संपर्क विवरण नहीं दिखते।','ਇਹ ਬੇਨਤੀਆਂ ਹਨ, ਪੱਕੀਆਂ ਬੁਕਿੰਗਾਂ ਨਹੀਂ। ਜਨਤਕ ਗਿਣਤੀ ਵਿੱਚ ਕਿਸਾਨ ਦੇ ਸੰਪਰਕ ਵੇਰਵੇ ਨਹੀਂ ਦਿਸਦੇ।'],
 ];
 const copy=new Map(rows.map(([en,hi,pa])=>[en,{hi,pa}]));
@@ -28,7 +28,7 @@ export function operationText(text,lang){if(typeof text!=='string'||lang==='en')
 // Local UI copy only. Values and API payloads remain unchanged.
 export function localizeOperations(node,lang){
   if(typeof node==='string')return operationText(node,lang);
-  if(Array.isArray(node))return node.map(child=>localizeOperations(child,lang));
+  if(Array.isArray(node))return React.Children.map(node,child=>localizeOperations(child,lang));
   if(!React.isValidElement(node))return node;
   const props={};
   // A translated option label must never change the value submitted to the API.
