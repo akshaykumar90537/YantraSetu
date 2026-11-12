@@ -1,0 +1,13 @@
+ALTER TABLE support_cases ADD COLUMN subject text NOT NULL DEFAULT '', ADD COLUMN machine_id uuid REFERENCES machines, ADD COLUMN request_key uuid;
+ALTER TABLE support_cases DROP CONSTRAINT support_cases_kind_check, DROP CONSTRAINT support_cases_status_check;
+ALTER TABLE support_cases ADD CHECK(kind IN ('BREAKDOWN','DELAY','BILLING','SAFETY','OTHER','BOOKING','OWNER','DETAILS','ACCOUNT','TECHNICAL')), ADD CHECK(status IN ('OPEN','IN_REVIEW','AWAITING_RESPONSE','RESOLVED','CLOSED'));
+CREATE UNIQUE INDEX support_request_key ON support_cases(reporter_id,request_key);
+ALTER TABLE content_reports ADD COLUMN booking_id uuid REFERENCES bookings, ADD COLUMN request_key uuid;
+ALTER TABLE content_reports ALTER COLUMN machine_id DROP NOT NULL;
+ALTER TABLE content_reports DROP CONSTRAINT content_reports_reason_check, DROP CONSTRAINT content_reports_status_check;
+ALTER TABLE content_reports ADD CHECK(reason IN ('SCAM','MISLEADING','UNSAFE','ABUSIVE','OTHER','PRICING','UNAVAILABLE','DISPUTE')), ADD CHECK(status IN ('OPEN','IN_REVIEW','AWAITING_RESPONSE','RESOLVED','CLOSED'));
+DROP INDEX content_reports_open;
+CREATE UNIQUE INDEX content_reports_open ON content_reports(reporter_id,machine_id) WHERE status NOT IN ('RESOLVED','CLOSED');
+CREATE UNIQUE INDEX report_request_key ON content_reports(reporter_id,request_key);
+CREATE TABLE support_evidence(id uuid PRIMARY KEY,case_id uuid REFERENCES support_cases,report_id uuid REFERENCES content_reports,image bytea NOT NULL,CHECK((case_id IS NULL) != (report_id IS NULL)));
+INSERT INTO schema_versions(version) VALUES(14);

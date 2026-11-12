@@ -1,3 +1,4 @@
+import {HelpCentre} from './components/HelpCentre';
 import {bookingFilters,matchesBookingFilter} from './data/bookingWorkspace';
 import {currentCoordinates,reverseLocality,matchesLocality} from './data/machineryLocation';
 import {ProfileAvatar} from './components/ProfileAvatar';
@@ -511,7 +512,7 @@ function Workspace({ entry, initialUser, onLogout, sharedLang, setSharedLang }) 
             </div>
           )}
 
-          {tab === 'saved' && rentalAllowed ? <section><h1>Saved Equipment</h1><p>Your saved equipment across villages. Check its location and availability before requesting a rental.</p><SavedEquipment openBooking={openBooking} lang={lang}/></section> : tab === 'community' ? <OperationsPanel user={u} openBooking={openBooking} lang={lang}/> : tab === 'dashboard' ? <section className="work-dashboard">
+          {tab === 'saved' && rentalAllowed ? <section><h1>Saved Equipment</h1><p>Your saved equipment across villages. Check its location and availability before requesting a rental.</p><SavedEquipment openBooking={openBooking} lang={lang}/></section> : tab === 'community' ? <HelpCentre lang={lang}/> : tab === 'dashboard' ? <section className="work-dashboard">
             {rentalAllowed ? <DashboardWelcome user={u} place={searchPlace} locationBusy={locationBusy} locationError={locationError} onPlace={selectSearchPlace} onLocate={locateVillage} query={equipmentQuery} setQuery={setEquipmentQuery} onSearch={()=>setTab('explore')} onBookings={()=>setTab('bookings')} onSaved={()=>setTab('saved')}/> : <div className="section-title"><div><span className="eyebrow">{t('dashboard')}</span><h1>{u.name}</h1></div></div>}
             {loadingOrError(isOwner?['bookings','fleet']:['bookings']) || (isOwner ? <div className="work-tiles">
               <article><h2>{t('requestsReview')}</h2><strong>{pending.length}</strong>{pending.slice(0,5).map(b=><p key={b.id}>{b.machine_name} · {b.farmer_name}<br/>{dt(b.start_at)} · {INR(b.estimate)}<br/>Respond by {dt(b.response_due_at)}</p>)}<button className="primary" disabled={!pending.length} onClick={()=>showBookings('actionGroup')}>{t('reviewRequests')}</button></article>

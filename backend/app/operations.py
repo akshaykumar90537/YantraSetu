@@ -3,7 +3,8 @@ import os
 from uuid import UUID
 from datetime import datetime, timezone
 from typing import Literal
-from fastapi import Depends
+from fastapi import Depends, Query, Response
+from .photos import normalize_photo
 from pydantic import BaseModel, ConfigDict, Field, AwareDatetime
 
 class OperationInput(BaseModel):
@@ -19,11 +20,15 @@ class Readiness(OperationInput):
     operator_confirmed:bool=False
     transport_confirmed:bool=False
 class Support(OperationInput):
-    booking_id:UUID
-    kind:Literal['BREAKDOWN','DELAY','BILLING','SAFETY','OTHER']
+    booking_id:UUID|None=None
+    machine_id:UUID|None=None
+    subject:str=Field(default='',max_length=120)
+    request_key:UUID|None=None
+    photos:list[str]=Field(default_factory=list,max_length=3)
+    kind:Literal['BREAKDOWN','DELAY','BILLING','SAFETY','OTHER','BOOKING','OWNER','DETAILS','ACCOUNT','TECHNICAL']
     description:str=Field(min_length=10,max_length=2000)
 class Resolution(OperationInput):
-    status:Literal['OPEN','IN_REVIEW','RESOLVED']
+    status:Literal['OPEN','IN_REVIEW','AWAITING_RESPONSE','RESOLVED','CLOSED']
     resolution:str=Field(min_length=3,max_length=2000)
 class Demand(OperationInput):
     village:str=Field(min_length=2,max_length=100)
@@ -33,8 +38,11 @@ class Demand(OperationInput):
 class SupportMessage(OperationInput):
     body:str=Field(min_length=3,max_length=2000)
 class ContentReport(OperationInput):
-    machine_id:UUID
-    reason:Literal['SCAM','MISLEADING','UNSAFE','ABUSIVE','OTHER']
+    machine_id:UUID|None=None
+    booking_id:UUID|None=None
+    request_key:UUID|None=None
+    photos:list[str]=Field(default_factory=list,max_length=3)
+    reason:Literal['SCAM','MISLEADING','UNSAFE','ABUSIVE','OTHER','PRICING','UNAVAILABLE','DISPUTE']
     description:str=Field(min_length=10,max_length=2000)
 class Delegation(OperationInput):
     coordinator_id:UUID
@@ -118,15 +126,23 @@ def register(app,m):
     @app.post('/api/support')
     def report(p:Support,u=Depends(m.user)):
         with db() as c:
-            m.booking_access(c,p.booking_id,u)
+            if p.request_key:require(len(p.subject)>=3,'Subject must contain at least 3 characters',422)
+            if p.booking_id:m.booking_access(c,p.booking_id,u)
+            if p.machine_id:require(one(c,'SELECT id FROM machines WHERE id=%s',(p.machine_id,)) is not None,'Listing not found',404)
+            c.execute('SELECT pg_advisory_xact_lock(hashtextextended(%s,0))',('ticket:'+str(u['id']),))
+            if p.request_key:
+                existing=one(c,'SELECT * FROM support_cases WHERE reporter_id=%s AND request_key=%s',(u['id'],p.request_key))
+                if existing:return existing
+            images=[normalize_photo(photo) for photo in p.photos]
             m.throttle(c,'support:'+str(u['id']),10,3600)
-            row=one(c,'INSERT INTO support_cases(id,booking_id,reporter_id,kind,description) VALUES(%s,%s,%s,%s,%s) RETURNING *',(m.uid(),p.booking_id,u['id'],p.kind,p.description.strip()))
+            row=one(c,'INSERT INTO support_cases(id,booking_id,reporter_id,kind,description,subject,machine_id,request_key) VALUES(%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *',(m.uid(),p.booking_id,u['id'],p.kind,p.description.strip(),p.subject,p.machine_id,p.request_key))
+            for image in images:c.execute('INSERT INTO support_evidence VALUES(%s,%s,NULL,%s)',(m.uid(),row['id'],image))
             m.audit(c,u['id'],p.booking_id,'SUPPORT_REQUESTED',{'case_id':str(row['id']),'kind':p.kind})
             return row
 
     @app.get('/api/support')
-    def my_cases(u=Depends(m.user)):
-        with db() as c:return many(c,'SELECT s.*,m.name AS machine_name FROM support_cases s JOIN bookings b ON b.id=s.booking_id JOIN machines m ON m.id=b.machine_id WHERE reporter_id=%s ORDER BY updated_at DESC LIMIT 100',(u['id'],))
+    def my_cases(u=Depends(m.user),offset:int=Query(0,ge=0),limit:int=Query(20,ge=1,le=100)):
+        with db() as c:return many(c,'SELECT s.*,m.name AS machine_name FROM support_cases s LEFT JOIN bookings b ON b.id=s.booking_id LEFT JOIN machines m ON m.id=COALESCE(s.machine_id,b.machine_id) WHERE reporter_id=%s ORDER BY updated_at DESC,s.id DESC LIMIT %s OFFSET %s',(u['id'],limit,offset))
 
     @app.get('/api/admin/support')
     def cases(u=Depends(admin)):
@@ -158,7 +174,7 @@ def register(app,m):
     def reply(ident:UUID,p:SupportMessage,u=Depends(m.user)):
         with db() as c:
             case=case_access(c,ident,u,True)
-            require(case['status']!='RESOLVED','This case is resolved. Staff must reopen it before further replies.',409)
+            require(case['status'] not in ('RESOLVED','CLOSED'),'This case is resolved. Staff must reopen it before further replies.',409)
             m.throttle(c,'support-reply:'+str(u['id']),20,3600)
             staff=str(u['id']) in staff_ids()
             row=one(c,'INSERT INTO support_messages(id,case_id,author_id,is_staff,body) VALUES(%s,%s,%s,%s,%s) RETURNING id,is_staff,body,created_at',(m.uid(),ident,u['id'],staff,p.body))
@@ -167,23 +183,54 @@ def register(app,m):
             m.audit(c,u['id'],case['booking_id'],'SUPPORT_REPLY',{'case_id':str(ident)})
             return row
 
+    def evidence_access(c,kind,ident,u):
+        if kind=='support':return case_access(c,ident,u)
+        require(kind=='reports','Unknown evidence type',404)
+        row=one(c,'SELECT * FROM content_reports WHERE id=%s',(ident,))
+        require(row is not None,'Report not found',404)
+        require(row['reporter_id']==u['id'] or str(u['id']) in staff_ids(),'This report is private',403)
+        return row
+
+    @app.get('/api/help-evidence/{kind}/{ident}')
+    def evidence_list(kind:str,ident:UUID,u=Depends(m.user)):
+        with db() as c:
+            evidence_access(c,kind,ident,u)
+            column='case_id' if kind=='support' else 'report_id'
+            return many(c,f'SELECT id FROM support_evidence WHERE {column}=%s',(ident,))
+
+    @app.get('/api/help-evidence/{kind}/{ident}/{photo_id}')
+    def evidence_image(kind:str,ident:UUID,photo_id:UUID,u=Depends(m.user)):
+        with db() as c:
+            evidence_access(c,kind,ident,u)
+            column='case_id' if kind=='support' else 'report_id'
+            row=one(c,f'SELECT image FROM support_evidence WHERE id=%s AND {column}=%s',(photo_id,ident))
+            require(row is not None,'Photo not found',404)
+            return Response(bytes(row['image']),media_type='image/jpeg',headers={'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff'})
+
     @app.post('/api/content-reports')
     def report_content(p:ContentReport,u=Depends(m.user)):
         with db() as c:
+            c.execute('SELECT pg_advisory_xact_lock(hashtextextended(%s,0))',('report:'+str(u['id']),))
             m.throttle(c,'content-report:'+str(u['id']),10,3600)
-            require(one(c,'SELECT id FROM machines WHERE id=%s',(p.machine_id,)) is not None,'Listing not found',404)
-            require(not one(c,"SELECT id FROM content_reports WHERE reporter_id=%s AND machine_id=%s AND status!='RESOLVED'",(u['id'],p.machine_id)),'You already have an open report for this listing',409)
-            row=one(c,'INSERT INTO content_reports(id,reporter_id,machine_id,reason,description) VALUES(%s,%s,%s,%s,%s) RETURNING *',(m.uid(),u['id'],p.machine_id,p.reason,p.description))
+            if p.booking_id:m.booking_access(c,p.booking_id,u)
+            if p.request_key:
+                existing=one(c,'SELECT * FROM content_reports WHERE reporter_id=%s AND request_key=%s',(u['id'],p.request_key))
+                if existing:return existing
+            images=[normalize_photo(photo) for photo in p.photos]
+            if p.machine_id:require(one(c,'SELECT id FROM machines WHERE id=%s',(p.machine_id,)) is not None,'Listing not found',404)
+            require(not one(c,"SELECT id FROM content_reports WHERE reporter_id=%s AND machine_id=%s AND status NOT IN ('RESOLVED','CLOSED')",(u['id'],p.machine_id)),'You already have an open report for this listing',409)
+            row=one(c,'INSERT INTO content_reports(id,reporter_id,machine_id,reason,description,booking_id,request_key) VALUES(%s,%s,%s,%s,%s,%s,%s) RETURNING *',(m.uid(),u['id'],p.machine_id,p.reason,p.description,p.booking_id,p.request_key))
+            for image in images:c.execute('INSERT INTO support_evidence VALUES(%s,NULL,%s,%s)',(m.uid(),row['id'],image))
             m.audit(c,u['id'],None,'CONTENT_REPORTED',{'report_id':str(row['id']),'machine_id':str(p.machine_id)})
             return row
 
     @app.get('/api/content-reports')
-    def my_reports(u=Depends(m.user)):
-        with db() as c:return many(c,'SELECT r.*,m.name AS machine_name FROM content_reports r JOIN machines m ON m.id=r.machine_id WHERE reporter_id=%s ORDER BY updated_at DESC LIMIT 100',(u['id'],))
+    def my_reports(u=Depends(m.user),offset:int=Query(0,ge=0),limit:int=Query(20,ge=1,le=100)):
+        with db() as c:return many(c,'SELECT r.*,m.name AS machine_name FROM content_reports r LEFT JOIN machines m ON m.id=r.machine_id WHERE reporter_id=%s ORDER BY updated_at DESC,r.id DESC LIMIT %s OFFSET %s',(u['id'],limit,offset))
 
     @app.get('/api/admin/content-reports')
     def all_reports(u=Depends(admin)):
-        with db() as c:return many(c,'SELECT r.*,m.name AS machine_name FROM content_reports r JOIN machines m ON m.id=r.machine_id ORDER BY updated_at DESC LIMIT 200')
+        with db() as c:return many(c,'SELECT r.*,m.name AS machine_name FROM content_reports r LEFT JOIN machines m ON m.id=r.machine_id ORDER BY updated_at DESC LIMIT 200')
 
     @app.post('/api/admin/content-reports/{ident}')
     def resolve_report(ident:UUID,p:Resolution,u=Depends(admin)):
@@ -191,8 +238,8 @@ def register(app,m):
             current=one(c,'SELECT * FROM content_reports WHERE id=%s',(ident,))
             require(current is not None,'Report not found',404)
             c.execute('SELECT pg_advisory_xact_lock(hashtextextended(%s,0))',('content-report:'+str(current['reporter_id']),))
-            if p.status!='RESOLVED':
-                require(not one(c,"SELECT id FROM content_reports WHERE reporter_id=%s AND machine_id=%s AND id!=%s AND status!='RESOLVED'",(current['reporter_id'],current['machine_id'],ident)),'Another report for this listing is already open',409)
+            if p.status not in ('RESOLVED','CLOSED'):
+                require(not one(c,"SELECT id FROM content_reports WHERE reporter_id=%s AND machine_id=%s AND id!=%s AND status NOT IN ('RESOLVED','CLOSED')",(current['reporter_id'],current['machine_id'],ident)),'Another report for this listing is already open',409)
             row=one(c,'UPDATE content_reports SET status=%s,resolution=%s,updated_at=now() WHERE id=%s RETURNING *',(p.status,p.resolution,ident))
             require(row is not None,'Report not found',404)
             m.audit(c,u['id'],None,'CONTENT_REPORT_UPDATED',{'report_id':str(ident),**p.model_dump()})
