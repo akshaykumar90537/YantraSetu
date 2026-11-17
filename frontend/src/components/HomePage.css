@@ -160,3 +160,18 @@
   .ys-nav-actions .ys-language { padding-inline: 4px; }
   .ys-nav-actions .ys-btn { padding-inline: 10px; }
 }
+
+/* Readable landing-page scale and clearer primary actions. */
+.ys-home{font-size:16px}.ys-home p{line-height:1.75}.ys-home .ys-links{font-size:15px}.ys-home .ys-btn{font-size:15px;min-height:48px;border-radius:10px}.ys-home .ys-text-link{font-size:15px}.ys-home .ys-eyebrow{font-size:12px;letter-spacing:1.2px}.ys-home .ys-hero-copy>p{font-size:18px;max-width:540px;color:#e0e8db}.ys-home .ys-hero-foot{font-size:14px;flex-wrap:wrap;color:#d4e2cd}.ys-home .ys-principles span{font-size:14px}.ys-home .ys-section-head>p,.ys-home .ys-equipment-copy p,.ys-home .ys-journey p,.ys-home .ys-calculator p{font-size:16px}.ys-home .ys-pills span,.ys-home .ys-scene-card small{font-size:13px}.ys-home .ys-scene-card strong{font-size:16px}.ys-home .ys-scene-label,.ys-home .ys-scene-caption{font-size:12px}.ys-home .ys-role-switch button,.ys-home .ys-equipment-tabs button,.ys-home .ys-faq-item button{font-size:16px;min-height:48px}.ys-home .ys-faq-item p,.ys-home .ys-estimate-note{font-size:15px}.ys-home .ys-language{font-size:14px;min-height:44px;max-width:90px}.ys-home .ys-logo small{font-size:10px;letter-spacing:1px}.ys-home .ys-footer p,.ys-home .ys-footer a{font-size:14px}.ys-home .ys-hero{border-radius:20px;box-shadow:0 14px 40px #173c3014}.ys-home .ys-journey{gap:40px}.home-entry .modal{width:min(560px,calc(100vw - 24px));padding:28px}.home-entry .modal p,.home-entry .modal input,.home-entry .modal .field>span{font-size:16px}.home-entry .modal small,.home-entry .modal .text-button{font-size:14px}.home-entry .modal .primary{min-height:48px;font-size:16px}.auth-role-picker{border:0;padding:0;margin:24px 0}.auth-role-picker legend{font-size:16px;font-weight:600;color:#173c30;margin-bottom:12px}.auth-role-picker>div{display:grid;grid-template-columns:1fr 1fr;gap:12px}.auth-role-picker label{display:flex;align-items:center;gap:12px;border:1px solid #bccdb7;border-radius:12px;padding:16px;cursor:pointer;background:#fff}.auth-role-picker label.selected{border:2px solid #28583e;padding:15px;background:#edf4e7}.auth-role-picker input{width:18px;height:18px;accent-color:#28583e;flex-shrink:0}.auth-role-picker strong{display:block;font-size:18px}.auth-role-picker small{display:block;margin-top:5px;color:#52684e;line-height:1.5}.auth-role-picker label:focus-within{outline:3px solid #a8b95c;outline-offset:3px}
+@media(max-width:700px){.ys-home .ys-nav{height:auto;min-height:82px;flex-wrap:wrap;padding:12px}.ys-home .ys-nav-actions{gap:8px}.ys-home .ys-logo{font-size:21px}.ys-home .ys-logo small{font-size:9px}.ys-home .ys-nav-actions .ys-btn{font-size:14px;padding:10px 12px}.ys-home .ys-language{max-width:70px}.ys-home .ys-hero{padding:30px 22px;border-radius:16px}.ys-home .ys-hero-copy>p{font-size:16px}.ys-home .ys-scene-caption{letter-spacing:.3px}.ys-home .ys-section{padding-block:40px}.ys-home .ys-links{top:100%}.ys-home .ys-principles{gap:18px}.ys-home .ys-principles span{font-size:13px}.auth-role-picker>div{gap:8px}.auth-role-picker label{padding:12px;align-items:flex-start}.auth-role-picker label.selected{padding:11px}.auth-role-picker strong{font-size:16px}}
+
+/* Compact sign-in popup while retaining readable text and touch targets. */
+.home-entry .modal .auth-role-picker { margin: 16px 0; }
+.home-entry .modal .auth-role-picker legend { margin-bottom: 8px; }
+.home-entry .modal .auth-role-picker label { padding: 12px; gap: 10px; }
+.home-entry .modal .auth-role-picker label.selected { padding: 11px; }
+.home-entry .modal .auth-role-picker strong { font-size: 16px; }
+.home-entry .modal .field { margin-bottom: 16px; }
+@media (max-width: 600px) {
+  .home-entry .modal { padding: 24px 20px; }
+}

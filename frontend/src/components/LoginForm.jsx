@@ -22,6 +22,8 @@ export function LoginForm({ busy, run, onUser, defaultRole = 'farmer', lang = 'e
   const [googleError, setGoogleError] = useState('');
   const [googleReady, setGoogleReady] = useState(false);
   const [mode, setMode] = useState('login');
+  const [selectedRole,setSelectedRole]=useState(defaultRole==='owner'?'owner':'farmer');
+  const roleRef=useRef(selectedRole);roleRef.current=selectedRole;
   const googleButton = useRef(null);
 
   useEffect(() => {
@@ -42,7 +44,7 @@ export function LoginForm({ busy, run, onUser, defaultRole = 'farmer', lang = 'e
           client_id: googleClientId,
           callback: ({ credential }) =>
             run(async () => {
-              const result = await api('/auth/google', { credential, role: defaultRole === 'owner' ? 'owner' : 'farmer', language: lang });
+              const result = await api('/auth/google', { credential, role: roleRef.current, language: lang });
               if (result.challenge_id) {
                 setMode('google');
                 setDestination(result.email);
@@ -131,6 +133,13 @@ export function LoginForm({ busy, run, onUser, defaultRole = 'farmer', lang = 'e
 
       {!challenge ? (
         <>
+          <fieldset className="auth-role-picker" disabled={busy}>
+            <legend>{({hi:'आप किस खाते से जारी रखना चाहते हैं?',pa:'ਤੁਸੀਂ ਕਿਸ ਖਾਤੇ ਨਾਲ ਜਾਰੀ ਰੱਖਣਾ ਚਾਹੁੰਦੇ ਹੋ?'})[lang]||'Choose your account type'}</legend>
+            <div>{['farmer','owner'].map(role=><label key={role} className={selectedRole===role?'selected':''}>
+              <input type="radio" name="login-account-role" value={role} checked={selectedRole===role} onChange={()=>setSelectedRole(role)}/>
+              <span><strong>{role==='farmer'?({hi:'किसान',pa:'ਕਿਸਾਨ'}[lang]||'Farmer'):({hi:'उपकरण मालिक',pa:'ਸਾਜ਼ੋ-ਸਾਮਾਨ ਮਾਲਕ'}[lang]||'Owner')}</strong><small>{role==='farmer'?({hi:'उपकरण किराये पर लें',pa:'ਸਾਜ਼ੋ-ਸਾਮਾਨ ਕਿਰਾਏ ਤੇ ਲਵੋ'}[lang]||'Rent equipment'):({hi:'अपने उपकरण किराये पर दें',pa:'ਆਪਣੇ ਸਾਜ਼ੋ-ਸਾਮਾਨ ਕਿਰਾਏ ਤੇ ਦਿਓ'}[lang]||'List and manage equipment')}</small></span>
+            </label>)}</div>
+          </fieldset>
           {/* Google Sign-In Area */}
           <div style={{ marginBottom: '14px' }}>
             <div style={{ display: 'flex', justifyContent: 'center', minHeight: '44px', width: '100%' }}>
@@ -186,10 +195,10 @@ export function LoginForm({ busy, run, onUser, defaultRole = 'farmer', lang = 'e
               const password = new FormData(e.target).get('password');
               run(async () => {
                 if (mode === 'login') {
-                  onUser(await api('/auth/password/login', { email: val, password }));
+                  onUser(await api('/auth/password/login', { email: val, password, role: selectedRole }));
                   return;
                 }
-                const result = await api('/auth/email/request', { email: val, action: mode });
+                const result = await api('/auth/email/request', { email: val, action: mode, role: selectedRole });
                 setDestination(val);
                 acceptChallenge(result);
               });
@@ -229,7 +238,7 @@ export function LoginForm({ busy, run, onUser, defaultRole = 'farmer', lang = 'e
                 challenge_id: challenge.challenge_id,
                 code: f.get('code'),
                 ...(mode !== 'google' ? { password: f.get('password') } : {}),
-                ...(f.get('name') ? { name: f.get('name'), roles: f.getAll('roles') } : {}),
+                ...(f.get('name') ? { name: f.get('name'), roles: [selectedRole] } : {}),
                 language: lang,
                 email: destination,
               });
@@ -262,32 +271,7 @@ export function LoginForm({ busy, run, onUser, defaultRole = 'farmer', lang = 'e
               placeholder="e.g. Balwinder Singh"
             />
           </FormField>
-          <fieldset>
-            <legend>For new accounts, select your role(s):</legend>
-            <small>Choose Farmer to rent or Owner to list equipment. Owner accounts cannot rent.</small>
-            {[
-              ['farmer', 'Rent equipment (Farmer)'],
-              ['owner', 'List equipment (Owner)'],
-              ['operator', 'Operate machinery (Operator)'],
-              ['fpo', 'Manage FPO fleet (FPO)'],
-            ].map(([role, label]) => (
-              <label className="checkbox" key={role}>
-                <input
-                  type="checkbox"
-                  name="roles"
-                  value={role}
-                  defaultChecked={role === defaultRole}
-                  onChange={e => {
-                    if (e.target.checked && (role === 'owner' || role === 'farmer')) {
-                      const other = role === 'owner' ? 'farmer' : 'owner';
-                      e.target.form.querySelector('input[name="roles"][value="' + other + '"]').checked = false;
-                    }
-                  }}
-                />
-                {label}
-              </label>
-            ))}
-          </fieldset></>}
+          <p className="auth-role-note">Account type: {selectedRole === 'owner' ? 'Owner — list equipment' : 'Farmer — rent equipment'}</p></>}
           {mode !== 'google' && <>
             <FormField label="New password (at least 12 characters)"><input name="password" type="password" autoComplete="new-password" minLength={12} maxLength={128} required /></FormField>
             <FormField label="Confirm password"><input name="confirmPassword" type="password" autoComplete="new-password" minLength={12} maxLength={128} required /></FormField>

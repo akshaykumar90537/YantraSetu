@@ -280,6 +280,19 @@ def test_owner_cannot_view_or_book_own_equipment(database, monkeypatch, mailbox)
         'idempotency_key': str(uuid4())
     })
     assert book_attempt.status_code == 403
+    # Neither pure owners nor legacy mixed-role owners may rent another owner's machine.
+    other_machine = uuid4()
+    with connect() as c:
+        c.execute("INSERT INTO machines(id,owner_id,name,category,village,location,rate,unit) VALUES(%s,%s,'Other tractor','Tractor','Test',ST_SetSRID(ST_MakePoint(75,30),4326)::geography,650,'hour')", (other_machine, operator))
+    for roles in (['owner'], ['farmer', 'owner']):
+        with connect() as c:
+            c.execute('UPDATE users SET roles=%s WHERE id=%s', (roles, owner))
+        for target in (machine, other_machine):
+            payload = {'machine_id':str(target),'start_at':start,'end_at':end,'latitude':30,'longitude':75,'idempotency_key':str(uuid4())}
+            assert owner_client.post('/api/bookings',json=payload).status_code == 403
+            assert owner_client.post('/api/quote',json=payload).status_code == 403
+    with connect() as c:
+        assert c.execute('SELECT count(*) FROM bookings WHERE farmer_id=%s',(owner,)).fetchone()[0] == 0
     assert owner_client.get(f'/api/machines/{machine}/availability').status_code == 200
 
     window = {'start':start,'end':end}

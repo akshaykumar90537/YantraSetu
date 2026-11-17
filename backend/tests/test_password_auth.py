@@ -69,7 +69,7 @@ def test_google_direct_login_links_existing_and_preserves_role(auth, monkeypatch
     for _ in range(2):
         nonce = client.post('/api/auth/google/nonce',json={}).json()['nonce']
         monkeypatch.setattr(main,'verify_google',lambda _: {'sub':'google-owner','email':'owner@gmail.com','nonce':nonce,'email_verified':True})
-        result = client.post('/api/auth/google',json={'credential':'x'*30,'role':'farmer'})
+        result = client.post('/api/auth/google',json={'credential':'x'*30,'role':'owner'})
         assert result.status_code == 200, result.text
         assert result.json()['id'] == user['id']
         assert result.json()['roles'] == ['owner']
@@ -93,3 +93,24 @@ def test_google_creates_once_and_rejects_wrong_nonce(auth, monkeypatch):
     assert result.status_code == 200, result.text
     assert result.json()['name'] == 'New Farmer'
     assert client.get('/api/me').json()['id'] == result.json()['id']
+
+
+def test_role_login_enforced_for_password_email_and_google(auth,monkeypatch):
+    client,connect=auth
+    user=verify(client,challenge(client,'owner@gmail.com'),name='Owner',roles=['owner'],password=PASSWORD).json()
+    client.post('/api/auth/logout',json={})
+    assert client.post('/api/auth/password/login',json={'email':user['email'],'password':PASSWORD,'role':'farmer'}).status_code==403
+    assert client.get('/api/me').status_code==401
+    code=client.post('/api/auth/email/request',json={'email':user['email'],'action':'reset','role':'farmer'}).json()
+    assert verify(client,{**code,'test_code':client.mailbox[user['email']]},password=PASSWORD).status_code==403
+    assert client.get('/api/me').status_code==401
+    monkeypatch.setenv('GOOGLE_CLIENT_ID','test-client')
+    nonce=client.post('/api/auth/google/nonce',json={}).json()['nonce']
+    monkeypatch.setattr(main,'verify_google',lambda _: {'sub':'role-google','email':user['email'],'nonce':nonce,'email_verified':True})
+    assert client.post('/api/auth/google',json={'credential':'x'*30,'role':'farmer'}).status_code==403
+    assert client.get('/api/me').status_code==401
+    with connect() as c:assert c.execute('SELECT google_sub FROM users WHERE id=%s',(user['id'],)).fetchone()[0] is None
+    nonce=client.post('/api/auth/google/nonce',json={}).json()['nonce']
+    assert client.post('/api/auth/google',json={'credential':'x'*30,'role':'owner'}).json()['id']==user['id']
+    client.post('/api/auth/logout',json={})
+    assert client.post('/api/auth/password/login',json={'email':user['email'],'password':PASSWORD,'role':'owner'}).json()['id']==user['id']

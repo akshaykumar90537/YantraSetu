@@ -79,6 +79,7 @@ function Workspace({ entry, initialUser, onLogout, sharedLang, setSharedLang }) 
   const [u, setUser] = useState(initialUser);
   const isOwner = u.roles.includes('owner');
   const rentalAllowed = canRent(u);
+  const bookingsLabel = isOwner ? ({hi:'किराये के अनुरोध',pa:'ਕਿਰਾਏ ਦੀਆਂ ਬੇਨਤੀਆਂ'}[lang] || 'Rental requests') : t('bookings');
   const [tab, setTab] = useState('dashboard');
   const [sidebarOpen, setSidebarOpen] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -284,8 +285,8 @@ function Workspace({ entry, initialUser, onLogout, sharedLang, setSharedLang }) 
 
   const nav = [
     ['dashboard', CalendarDays, t('dashboard')],
-    ['explore', Search, t('explore')],
-    ['bookings', CalendarDays, t('bookings')],
+    ...(rentalAllowed ? [['explore', Search, t('explore')]] : []),
+    ['bookings', CalendarDays, bookingsLabel],
     ...(rentalAllowed ? [['saved', Bookmark, t('saved')]] : []),
     ['weather', CloudSun, t('weatherTab')],
     ...(u?.roles.includes('owner')
@@ -367,11 +368,12 @@ function Workspace({ entry, initialUser, onLogout, sharedLang, setSharedLang }) 
           <button
             type="button"
             className="sidebar-toggle-btn"
-            aria-label="Collapse sidebar"
-            onClick={() => setSidebarOpen(false)}
-            title="Collapse sidebar"
+            aria-label={sidebarOpen ? "Collapse sidebar" : "Expand sidebar"}
+            aria-expanded={sidebarOpen}
+            onClick={() => setSidebarOpen(open => !open)}
+            title={sidebarOpen ? "Collapse sidebar" : "Expand sidebar"}
           >
-            <PanelLeftClose size={18} />
+            {sidebarOpen ? <PanelLeftClose size={18} /> : <PanelLeftOpen size={18} />}
           </button>
         </div>
 
@@ -381,6 +383,9 @@ function Workspace({ entry, initialUser, onLogout, sharedLang, setSharedLang }) 
             <button
               key={key}
               className={tab === key ? 'nav-item selected' : 'nav-item'}
+              aria-label={label}
+              aria-current={tab === key ? 'page' : undefined}
+              title={!sidebarOpen ? label : undefined}
               onClick={() => {
                 setTab(key);
                 setError('');
@@ -451,7 +456,7 @@ function Workspace({ entry, initialUser, onLogout, sharedLang, setSharedLang }) 
             )}
             <div className="breadcrumb">
               YantraSetu <ChevronRight size={14} />
-              <strong>{t(tab)}</strong>
+              <strong>{tab === 'bookings' ? bookingsLabel : t(tab)}</strong>
             </div>
           </div>
           <div className="header-right">
@@ -513,7 +518,7 @@ function Workspace({ entry, initialUser, onLogout, sharedLang, setSharedLang }) 
           )}
 
           {tab === 'saved' && rentalAllowed ? <section><h1>Saved Equipment</h1><p>Your saved equipment across villages. Check its location and availability before requesting a rental.</p><SavedEquipment openBooking={openBooking} lang={lang}/></section> : tab === 'community' ? <HelpCentre lang={lang}/> : tab === 'dashboard' ? <section className="work-dashboard">
-            {rentalAllowed ? <DashboardWelcome user={u} place={searchPlace} locationBusy={locationBusy} locationError={locationError} onPlace={selectSearchPlace} onLocate={locateVillage} query={equipmentQuery} setQuery={setEquipmentQuery} onSearch={()=>setTab('explore')} onBookings={()=>setTab('bookings')} onSaved={()=>setTab('saved')}/> : <div className="section-title"><div><span className="eyebrow">{t('dashboard')}</span><h1>{u.name}</h1></div></div>}
+            {rentalAllowed ? <DashboardWelcome user={u} place={searchPlace} locationBusy={locationBusy} locationError={locationError} onPlace={selectSearchPlace} onLocate={locateVillage} query={equipmentQuery} setQuery={setEquipmentQuery} onSearch={()=>setTab('explore')} onBookings={()=>setTab('bookings')} onSaved={()=>setTab('saved')}/> : <div className="section-title"><div><span className="eyebrow">{isOwner ? ({hi:'मालिक डैशबोर्ड',pa:'ਮਾਲਕ ਡੈਸ਼ਬੋਰਡ'}[lang] || 'Owner dashboard') : t('dashboard')}</span><h1>{u.name}</h1>{isOwner && <p>{({hi:'अपनी मशीनरी, किसानों के अनुरोध और किराये का प्रबंधन करें। केवल किसान खाते मशीनरी बुक कर सकते हैं।',pa:'ਆਪਣੀ ਮਸ਼ੀਨਰੀ ਅਤੇ ਕਿਸਾਨਾਂ ਦੀਆਂ ਬੇਨਤੀਆਂ ਦਾ ਪ੍ਰਬੰਧ ਕਰੋ। ਸਿਰਫ਼ ਕਿਸਾਨ ਖਾਤੇ ਮਸ਼ੀਨਰੀ ਬੁੱਕ ਕਰ ਸਕਦੇ ਹਨ।'}[lang] || 'Manage your machinery, farmer requests and rentals. Only farmer accounts can book equipment.')}</p>}</div></div>}
             {loadingOrError(isOwner?['bookings','fleet']:['bookings']) || (isOwner ? <div className="work-tiles">
               <article><h2>{t('requestsReview')}</h2><strong>{pending.length}</strong>{pending.slice(0,5).map(b=><p key={b.id}>{b.machine_name} · {b.farmer_name}<br/>{dt(b.start_at)} · {INR(b.estimate)}<br/>Respond by {dt(b.response_due_at)}</p>)}<button className="primary" disabled={!pending.length} onClick={()=>showBookings('actionGroup')}>{t('reviewRequests')}</button></article>
               <article><h2>{t('todayJobs')}</h2><strong>{todayJobs.length}</strong>{todayJobs.map(b=><button className="text-button" key={b.id} onClick={()=>showBookings('booking-'+b.id)}>{b.machine_name} · {dt(b.start_at)}</button>)}</article>
@@ -524,7 +529,7 @@ function Workspace({ entry, initialUser, onLogout, sharedLang, setSharedLang }) 
               <p>{t(nextRental.status)} · {t(nextRental.needs_meter_confirmation && nextRental.farmer_id===u.id ? 'confirmReadingBtn' : nextRental.status==='PENDING' ? 'waitingOwner' : 'viewDetails')}</p>
               <button className="primary" onClick={()=>showBookings('booking-'+nextRental.id)}>{t('viewDetails')}</button></> : <p>{t('noUpcoming')}</p>}
               {rentalAllowed && <button className={nextRental?'outline':'primary'} onClick={()=>setTab('explore')}>{t('findVillage')}</button>}</article>)}
-          </section> : tab === 'explore' ? (
+          </section> : tab === 'explore' && rentalAllowed ? (
             <>
               <h1>{t('explore')}</h1>
               <FormField label="Search equipment by name or type"><input className="equipment-query-input" type="search" value={equipmentQuery} onChange={e=>setEquipmentQuery(e.target.value)} maxLength={120} placeholder="Tractor, harvester, sprayer…"/></FormField>
@@ -704,7 +709,7 @@ function Workspace({ entry, initialUser, onLogout, sharedLang, setSharedLang }) 
               <div className="section-title">
                 <div>
                   <div className="eyebrow muted">{t('workspaceEyebrow')}</div>
-                  <h1 className="page-title">{t(tab)}</h1>
+                  <h1 className="page-title">{tab === 'bookings' ? bookingsLabel : t(tab)}</h1>
                   <p>{t('workspaceSub')}</p>
                 </div>
                 {u && (

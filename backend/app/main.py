@@ -225,8 +225,10 @@ class EmailLogin(BaseModel):
     def normalize_email(cls,value):
         return value.strip().lower() if isinstance(value,str) else value
 class EmailRequest(EmailLogin):
+    role:Literal['farmer','owner']|None=None
     action:Literal['login','register','reset']='login'
 class PasswordLogin(EmailLogin):
+    role:Literal['farmer','owner']|None=None
     password:str=Field(min_length=1,max_length=128)
 class GoogleLogin(BaseModel):
     credential:str=Field(min_length=20,max_length=10000)
@@ -236,6 +238,11 @@ class GoogleLogin(BaseModel):
 @app.get('/api/auth/config')
 def auth_config():
     return {'email':email_mode(), 'phone':False, 'google_client_id':os.getenv('GOOGLE_CLIENT_ID','')}
+
+def require_login_role(u,role):
+    if role is None:return
+    allowed=can_rent(u['roles']) if role=='farmer' else 'owner' in u['roles']
+    require(allowed,'This account does not have permission to sign in with the selected role. Choose the correct account type or use another email.',403)
 
 @app.post('/api/auth/password/login')
 def password_login(p:PasswordLogin,request:Request,response:Response):
@@ -248,6 +255,7 @@ def password_login(p:PasswordLogin,request:Request,response:Response):
         saved=one(c,'SELECT password_hash FROM user_passwords WHERE user_id=%s',(u['id'],)) if u else None
         valid=check_password(p.password,saved['password_hash'] if saved else DUMMY_HASH)
         require(valid and u and saved,'Incorrect email or password. Use Set or reset password if needed.',401)
+        require_login_role(u,p.role)
         return establish_session(c,u,response)
 
 @app.post('/api/auth/email/request')
@@ -255,7 +263,7 @@ def email_request(p:EmailRequest,request:Request):
     require(email_mode()!='disabled','Email sign-in is not configured.',503)
     with db() as c:
         throttle(c,'ip:'+request.client.host,20,600)
-        return issue(c,p.email,'email_login',{'action':p.action})
+        return issue(c,p.email,'email_login',{'action':p.action,'selected_role':p.role})
 
 @app.post('/api/auth/google/nonce')
 def google_nonce(request:Request,response:Response):
@@ -288,7 +296,7 @@ def google_request(p:GoogleLogin,request:Request,response:Response):
             # Google is not authoritative for a third-party mailbox without Workspace.
             authoritative=email.endswith('@gmail.com') or bool(claims.get('hd'))
             if not authoritative:
-                result=issue(c,email,'email_login',{'google_sub':claims['sub'],'google_name':claims.get('name') or 'Google user','roles':[p.role],'language':p.language})
+                result=issue(c,email,'email_login',{'google_sub':claims['sub'],'google_name':claims.get('name') or 'Google user','roles':[p.role],'selected_role':p.role,'language':p.language})
                 response.delete_cookie('ys_google_nonce',path='/api/auth/google')
                 return {**result,'email':email}
             if u:
@@ -296,6 +304,7 @@ def google_request(p:GoogleLogin,request:Request,response:Response):
             else:
                 name=(claims.get('name') or email.split('@')[0]).strip()[:80] or 'Google user'
                 u=one(c,'INSERT INTO users(id,email,name,roles,language,email_verified_at,google_sub) VALUES(%s,%s,%s,%s,%s,now(),%s) RETURNING *',(uid(),email,name,[p.role],p.language,claims['sub']))
+        require_login_role(u,p.role)
         result=establish_session(c,u,response)
     response.delete_cookie('ys_google_nonce',path='/api/auth/google')
     return result
@@ -309,6 +318,8 @@ def email_verify(p:LoginVerify,response:Response):
         sub=row['payload'].get('google_sub')
         u=one(c,'SELECT * FROM users WHERE lower(email)=%s',(email,))
         action=row['payload'].get('action','login')
+        selected_role=row['payload'].get('selected_role')
+        if u:require_login_role(u,selected_role)
         if action=='reset':
             require(u is not None,'No account exists for this email. Choose Create account.',404)
         if action in ('register','reset'):
@@ -322,7 +333,7 @@ def email_verify(p:LoginVerify,response:Response):
             name=p.name or row['payload'].get('google_name')
             require(name is not None and len(name.strip())>=2,'Your name is required to create an account.',422)
             u=one(c,'INSERT INTO users(id,email,name,roles,language,email_verified_at,google_sub) VALUES(%s,%s,%s,%s,%s,now(),%s) RETURNING *',
-                  (uid(),email,name.strip()[:80],list(set(p.roles or row['payload'].get('roles') or ['farmer'])),row['payload'].get('language',p.language),sub))
+                  (uid(),email,name.strip()[:80],([selected_role] if selected_role else list(set(p.roles or row['payload'].get('roles') or ['farmer']))),row['payload'].get('language',p.language),sub))
         else:
             # Login never changes existing roles or profile names.
             u=one(c,'UPDATE users SET email_verified_at=now(),google_sub=COALESCE(google_sub,%s) WHERE id=%s RETURNING *',(sub,u['id']))
@@ -681,6 +692,8 @@ def book(p:Booking,u=Depends(renter)):
     return create_booking(p,u)
 
 def create_booking(p,u,assisted_by=None):
+    # Enforce the renter rule for direct and assisted booking paths alike.
+    renter(u)
     try:
         validate_booking_interval(p.start_at, p.end_at)
     except ValueError as e:
